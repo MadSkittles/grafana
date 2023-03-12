@@ -99,6 +99,7 @@ export class DashboardModel implements TimeModel {
   private panelsAffectedByVariableChange: number[] | null;
   private appEventsSubscription: Subscription;
   private lastRefresh: number;
+  eagerLoad: boolean;
 
   // ------------------
   // not persisted
@@ -156,6 +157,7 @@ export class DashboardModel implements TimeModel {
     this.links = data.links ?? [];
     this.gnetId = data.gnetId || null;
     this.panels = map(data.panels ?? [], (panelData: any) => new PanelModel(panelData));
+    this.eagerLoad = data.eagerLoad;
     this.ensurePanelsHaveIds();
     this.formatDate = this.formatDate.bind(this);
 

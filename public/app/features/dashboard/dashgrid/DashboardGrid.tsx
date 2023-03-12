@@ -196,6 +196,7 @@ export class DashboardGrid extends PureComponent<Props, State> {
         isViewing={panel.isViewing}
         width={width}
         height={height}
+        lazy={!this.props.dashboard.eagerLoad}
       />
     );
   }

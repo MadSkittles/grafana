@@ -3,7 +3,7 @@ import { connect, ConnectedProps } from 'react-redux';
 
 import { TimeZone } from '@grafana/data';
 import { config } from '@grafana/runtime';
-import { CollapsableSection, Field, Input, RadioButtonGroup, TagsInput } from '@grafana/ui';
+import { CollapsableSection, Field, Input, RadioButtonGroup, Switch, TagsInput } from '@grafana/ui';
 import { Page } from 'app/core/components/PageNew/Page';
 import { FolderPicker } from 'app/core/components/Select/FolderPicker';
 import { updateTimeZoneDashboard, updateWeekStartDashboard } from 'app/features/dashboard/state/actions';
@@ -77,6 +77,11 @@ export function GeneralSettingsUnconnected({
     updateWeekStart(weekStart);
   };
 
+  const onEagerLoadChange = () => {
+    dashboard.eagerLoad = !dashboard.eagerLoad;
+    setRenderCounter(renderCounter + 1);
+  }
+
   const onTagsChange = (tags: string[]) => {
     dashboard.tags = tags;
     setRenderCounter(renderCounter + 1);
@@ -122,6 +127,14 @@ export function GeneralSettingsUnconnected({
             description="Set to read-only to disable all editing. Reload the dashboard for changes to take effect"
           >
             <RadioButtonGroup value={dashboard.editable} options={editableOptions} onChange={onEditableChange} />
+          </Field>
+
+          <Field label="Eager Load Panels">
+            <Switch
+              id="eager-load-toggle"
+              value={!!dashboard.eagerLoad}
+              onChange={onEagerLoadChange}
+            />
           </Field>
         </div>
 
