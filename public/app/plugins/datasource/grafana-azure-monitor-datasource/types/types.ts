@@ -26,7 +26,6 @@ export enum AzureCloud {
   Public = 'AzureCloud',
   China = 'AzureChinaCloud',
   USGovernment = 'AzureUSGovernment',
-  Germany = 'AzureGermanCloud',
   None = '',
 }
 
@@ -36,7 +35,6 @@ export type ConcealedSecret = symbol;
 
 interface AzureCredentialsBase {
   authType: AzureAuthType;
-  defaultSubscriptionId?: string;
 }
 
 export interface AzureManagedIdentityCredentials extends AzureCredentialsBase {
@@ -259,6 +257,13 @@ export interface LegacyAzureGetMetricMetadataQuery {
   metricNamespace: string;
   customNamespace?: string;
   metricName: string;
+}
+
+export interface AzureGetResourceNamesQuery {
+  subscriptionId: string;
+  resourceGroup?: string;
+  metricNamespace?: string;
+  region?: string;
 }
 
 export interface AzureMonitorLocations {
