@@ -1,11 +1,12 @@
 import { css } from '@emotion/css';
-import React, { FC } from 'react';
+import React from 'react';
 
 import { GrafanaTheme2, dateTime, dateTimeFormat } from '@grafana/data';
 import { useStyles2, Tooltip } from '@grafana/ui';
 import { Time } from 'app/features/explore/Time';
 import { CombinedRule } from 'app/types/unified-alerting';
 
+import { useCleanAnnotations } from '../../utils/annotations';
 import { isRecordingRulerRule } from '../../utils/rules';
 import { isNullDate } from '../../utils/time';
 import { AlertLabels } from '../AlertLabels';
@@ -26,13 +27,13 @@ interface Props {
 // We don't want to paginate the instances list on the alert list page
 const INSTANCES_DISPLAY_LIMIT = 15;
 
-export const RuleDetails: FC<Props> = ({ rule }) => {
+export const RuleDetails = ({ rule }: Props) => {
   const styles = useStyles2(getStyles);
   const {
     namespace: { rulesSource },
   } = rule;
 
-  const annotations = Object.entries(rule.annotations).filter(([_, value]) => !!value.trim());
+  const annotations = useCleanAnnotations(rule.annotations);
 
   return (
     <div>

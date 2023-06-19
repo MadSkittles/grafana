@@ -13,6 +13,7 @@ import {
   LogRowModel,
   LogsDedupStrategy,
   LogsMetaKind,
+  LogsVolumeType,
   MutableDataFrame,
   sortDataFrame,
   toDataFrame,
@@ -28,9 +29,12 @@ import {
   getSeriesProperties,
   LIMIT_LABEL,
   logSeriesToLogsModel,
-  queryLogsVolume,
   queryLogsSample,
+  queryLogsVolume,
 } from './logsModel';
+
+const FROM = dateTimeParse('2021-06-17 00:00:00', { timeZone: 'utc' });
+const TO = dateTimeParse('2021-06-17 00:00:00', { timeZone: 'utc' });
 
 describe('dedupLogRows()', () => {
   test('should return rows as is when dedup is set to none', () => {
@@ -1119,8 +1123,9 @@ describe('logs volume', () => {
     datasource: MockObservableDataSourceApi,
     request: DataQueryRequest<TestDataQuery>;
 
-  function createFrame(labels: object, timestamps: number[], values: number[]) {
+  function createFrame(labels: object, timestamps: number[], values: number[], refId: string) {
     return toDataFrame({
+      refId,
       fields: [
         { name: 'Time', type: FieldType.time, values: timestamps },
         {
@@ -1133,21 +1138,13 @@ describe('logs volume', () => {
     });
   }
 
-  function createExpectedFields(levelName: string, timestamps: number[], values: number[]) {
-    return [
-      { name: 'Time', values: { buffer: timestamps } },
-      {
-        name: 'Value',
-        config: { displayNameFromDS: levelName },
-        values: { buffer: values },
-      },
-    ];
-  }
-
   function setup(datasourceSetup: () => void) {
     datasourceSetup();
     request = {
-      targets: [{ target: 'volume query 1' }, { target: 'volume query 2' }],
+      targets: [
+        { refId: 'A', target: 'volume query 1' },
+        { refId: 'B', target: 'volume query 2' },
+      ],
       scopedVars: {},
     } as unknown as DataQueryRequest<TestDataQuery>;
     volumeProvider = queryLogsVolume(datasource, request, {
@@ -1155,8 +1152,8 @@ describe('logs volume', () => {
         return dataFrame.fields[1]!.labels!.level === 'error' ? LogLevel.error : LogLevel.unknown;
       },
       range: {
-        from: dateTimeParse('2021-06-17 00:00:00', { timeZone: 'utc' }),
-        to: dateTimeParse('2021-06-17 00:00:00', { timeZone: 'utc' }),
+        from: FROM,
+        to: TO,
         raw: { from: '0', to: '1' },
       },
       targets: request.targets,
@@ -1165,20 +1162,40 @@ describe('logs volume', () => {
 
   function setupMultipleResults() {
     // level=unknown
-    const resultAFrame1 = createFrame({ app: 'app01' }, [100, 200, 300], [5, 5, 5]);
+    const resultAFrame1 = createFrame({ app: 'app01' }, [100, 200, 300], [5, 5, 5], 'A');
     // level=error
-    const resultAFrame2 = createFrame({ app: 'app01', level: 'error' }, [100, 200, 300], [0, 1, 0]);
+    const resultAFrame2 = createFrame({ app: 'app01', level: 'error' }, [100, 200, 300], [0, 1, 0], 'B');
     // level=unknown
-    const resultBFrame1 = createFrame({ app: 'app02' }, [100, 200, 300], [1, 2, 3]);
+    const resultBFrame1 = createFrame({ app: 'app02' }, [100, 200, 300], [1, 2, 3], 'A');
     // level=error
-    const resultBFrame2 = createFrame({ app: 'app02', level: 'error' }, [100, 200, 300], [1, 1, 1]);
+    const resultBFrame2 = createFrame({ app: 'app02', level: 'error' }, [100, 200, 300], [1, 1, 1], 'B');
 
     datasource = new MockObservableDataSourceApi('loki', [
       {
+        state: LoadingState.Loading,
         data: [resultAFrame1, resultAFrame2],
       },
       {
+        state: LoadingState.Done,
         data: [resultBFrame1, resultBFrame2],
+      },
+    ]);
+  }
+
+  function setupMultipleResultsStreaming() {
+    // level=unknown
+    const resultAFrame1 = createFrame({ app: 'app01' }, [100, 200, 300], [5, 5, 5], 'A');
+    // level=error
+    const resultAFrame2 = createFrame({ app: 'app01', level: 'error' }, [100, 200, 300], [0, 1, 0], 'B');
+
+    datasource = new MockObservableDataSourceApi('loki', [
+      {
+        state: LoadingState.Streaming,
+        data: [resultAFrame1],
+      },
+      {
+        state: LoadingState.Done,
+        data: [resultAFrame1, resultAFrame2],
       },
     ]);
   }
@@ -1187,25 +1204,61 @@ describe('logs volume', () => {
     datasource = new MockObservableDataSourceApi('loki', [], undefined, 'Error message');
   }
 
-  it('aggregates data frames by level', async () => {
+  it('applies correct meta data', async () => {
     setup(setupMultipleResults);
 
     await expect(volumeProvider).toEmitValuesWith((received) => {
-      expect(received).toMatchObject([
-        { state: LoadingState.Loading, error: undefined, data: [] },
-        {
-          state: LoadingState.Done,
-          error: undefined,
-          data: [
-            {
-              fields: createExpectedFields('unknown', [100, 200, 300], [6, 7, 8]),
+      expect(received).toContainEqual({ state: LoadingState.Loading, error: undefined, data: [] });
+      expect(received).toContainEqual({
+        state: LoadingState.Done,
+        error: undefined,
+        data: [
+          expect.objectContaining({
+            fields: expect.anything(),
+            meta: {
+              custom: {
+                sourceQuery: { refId: 'A', target: 'volume query 1' },
+                datasourceName: 'loki',
+                logsVolumeType: LogsVolumeType.FullRange,
+                absoluteRange: {
+                  from: FROM.valueOf(),
+                  to: TO.valueOf(),
+                },
+              },
             },
-            {
-              fields: createExpectedFields('error', [100, 200, 300], [1, 2, 1]),
+          }),
+          expect.anything(),
+        ],
+      });
+    });
+  });
+
+  it('applies correct meta data when streaming', async () => {
+    setup(setupMultipleResultsStreaming);
+
+    await expect(volumeProvider).toEmitValuesWith((received) => {
+      expect(received).toContainEqual({ state: LoadingState.Loading, error: undefined, data: [] });
+      expect(received).toContainEqual({
+        state: LoadingState.Done,
+        error: undefined,
+        data: [
+          expect.objectContaining({
+            fields: expect.anything(),
+            meta: {
+              custom: {
+                sourceQuery: { refId: 'A', target: 'volume query 1' },
+                datasourceName: 'loki',
+                logsVolumeType: LogsVolumeType.FullRange,
+                absoluteRange: {
+                  from: FROM.valueOf(),
+                  to: TO.valueOf(),
+                },
+              },
             },
-          ],
-        },
-      ]);
+          }),
+          expect.anything(),
+        ],
+      });
     });
   });
 

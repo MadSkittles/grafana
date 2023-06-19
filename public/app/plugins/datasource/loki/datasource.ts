@@ -22,7 +22,6 @@ import {
   DateTime,
   FieldCache,
   FieldType,
-  getDefaultTimeRange,
   Labels,
   LoadingState,
   LogLevel,
@@ -68,6 +67,7 @@ import {
   getLabelFilterPositions,
 } from './modifyQuery';
 import { getQueryHints } from './queryHints';
+import { runSplitQuery } from './querySplitting';
 import {
   getLogQueryFromMetricsQuery,
   getNormalizedLokiQuery,
@@ -75,6 +75,7 @@ import {
   getParserFromQuery,
   isLogsQuery,
   isValidQuery,
+  requestSupportsSplitting,
 } from './queryUtils';
 import { sortDataFrameByTime, SortDirection } from './sortDataFrame';
 import { doLokiChannelStream } from './streaming';
@@ -194,7 +195,7 @@ export class LokiDatasource
         return {
           ...normalizedQuery,
           refId: `${REF_ID_STARTER_LOG_VOLUME}${normalizedQuery.refId}`,
-          instant: false,
+          queryType: LokiQueryType.Range,
           supportingQueryType: SupportingQueryType.LogsVolume,
           expr: `sum by (level) (count_over_time(${expr}[$__interval]))`,
         };
@@ -207,6 +208,7 @@ export class LokiDatasource
         }
         return {
           ...normalizedQuery,
+          queryType: LokiQueryType.Range,
           refId: `${REF_ID_STARTER_LOG_SAMPLE}${normalizedQuery.refId}`,
           expr: getLogQueryFromMetricsQuery(expr),
           maxLines: 100,
@@ -255,7 +257,7 @@ export class LokiDatasource
       .map(getNormalizedLokiQuery) // "fix" the `.queryType` prop
       .map((q) => ({ ...q, maxLines: q.maxLines ?? this.maxLines }));
 
-    const fixedRequest: DataQueryRequest<LokiQuery> & { targets: LokiQuery[] } = {
+    const fixedRequest: DataQueryRequest<LokiQuery> = {
       ...request,
       targets: queries,
     };
@@ -281,16 +283,23 @@ export class LokiDatasource
 
     if (fixedRequest.liveStreaming) {
       return this.runLiveQueryThroughBackend(fixedRequest);
-    } else {
-      const startTime = new Date();
-      return super.query(fixedRequest).pipe(
-        // in case of an empty query, this is somehow run twice. `share()` is no workaround here as the observable is generated from `of()`.
-        map((response) =>
-          transformBackendResult(response, fixedRequest.targets, this.instanceSettings.jsonData.derivedFields ?? [])
-        ),
-        tap((response) => trackQuery(response, fixedRequest, startTime))
-      );
     }
+
+    if (config.featureToggles.lokiQuerySplitting && requestSupportsSplitting(fixedRequest.targets)) {
+      return runSplitQuery(this, fixedRequest);
+    }
+
+    return this.runQuery(fixedRequest);
+  }
+
+  runQuery(fixedRequest: DataQueryRequest<LokiQuery> & { targets: LokiQuery[] }) {
+    const startTime = new Date();
+    return super.query(fixedRequest).pipe(
+      map((response) =>
+        transformBackendResult(response, fixedRequest.targets, this.instanceSettings.jsonData.derivedFields ?? [])
+      ),
+      tap((response) => trackQuery(response, fixedRequest, startTime))
+    );
   }
 
   runLiveQueryThroughBackend(request: DataQueryRequest<LokiQuery>): Observable<DataQueryResponse> {
@@ -415,9 +424,9 @@ export class LokiDatasource
     return res.data ?? (res || []);
   }
 
-  async getQueryStats(query: LokiQuery): Promise<QueryStats> {
+  async getQueryStats(query: string): Promise<QueryStats> {
     const { start, end } = this.getTimeRangeParams();
-    const labelMatchers = getStreamSelectorsFromQuery(query.expr);
+    const labelMatchers = getStreamSelectorsFromQuery(query);
 
     let statsForAll: QueryStats = { streams: 0, chunks: 0, bytes: 0, entries: 0 };
 
@@ -539,11 +548,11 @@ export class LokiDatasource
       expr: query.expr,
       queryType: LokiQueryType.Range,
       refId: REF_ID_DATA_SAMPLES,
+      // For samples we limit the request to 10 lines, so queries are small and fast
       maxLines: 10,
     };
 
-    // For samples, we use defaultTimeRange (now-6h/now) and limit od 10 lines so queries are small and fast
-    const timeRange = getDefaultTimeRange();
+    const timeRange = this.getTimeRange();
     const request = makeRequest(lokiLogsQuery, timeRange, CoreApp.Unknown, REF_ID_DATA_SAMPLES, true);
     return await lastValueFrom(this.query(request).pipe(switchMap((res) => of(res.data))));
   }
@@ -594,6 +603,10 @@ export class LokiDatasource
       }
       case 'ADD_JSON_PARSER': {
         expression = addParserToQuery(expression, 'json');
+        break;
+      }
+      case 'ADD_UNPACK_PARSER': {
+        expression = addParserToQuery(expression, 'unpack');
         break;
       }
       case 'ADD_NO_PIPELINE_ERROR': {

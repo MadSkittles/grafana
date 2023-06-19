@@ -47,7 +47,6 @@ func TestIntegrationElasticsearch(t *testing.T) {
 	jsonData := simplejson.NewFromAny(map[string]interface{}{
 		"httpMethod":      "post",
 		"httpHeaderName1": "X-CUSTOM-HEADER",
-		"esVersion":       "8.0.0",
 		"timeField":       "@timestamp",
 	})
 	secureJSONData := map[string]string{
@@ -56,13 +55,13 @@ func TestIntegrationElasticsearch(t *testing.T) {
 	}
 
 	uid := "es"
-	err := testEnv.Server.HTTPServer.DataSourcesService.AddDataSource(ctx, &datasources.AddDataSourceCommand{
-		OrgId:          u.OrgID,
+	_, err := testEnv.Server.HTTPServer.DataSourcesService.AddDataSource(ctx, &datasources.AddDataSourceCommand{
+		OrgID:          u.OrgID,
 		Access:         datasources.DS_ACCESS_PROXY,
 		Name:           "Elasticsearch",
 		Type:           datasources.DS_ES,
-		Uid:            uid,
-		Url:            outgoingServer.URL,
+		UID:            uid,
+		URL:            outgoingServer.URL,
 		BasicAuth:      true,
 		BasicAuthUser:  "basicAuthUser",
 		JsonData:       jsonData,

@@ -5,6 +5,7 @@ import (
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"strings"
 	"time"
@@ -15,6 +16,8 @@ import (
 	ac "github.com/grafana/grafana/pkg/services/accesscontrol"
 	"github.com/grafana/grafana/pkg/services/org"
 	"github.com/grafana/grafana/pkg/services/quota"
+	"github.com/grafana/grafana/pkg/services/serviceaccounts"
+	"github.com/grafana/grafana/pkg/services/supportbundles"
 	"github.com/grafana/grafana/pkg/services/team"
 	"github.com/grafana/grafana/pkg/services/user"
 	"github.com/grafana/grafana/pkg/setting"
@@ -36,6 +39,7 @@ func ProvideService(
 	teamService team.Service,
 	cacheService *localcache.CacheService,
 	quotaService quota.Service,
+	bundleRegistry supportbundles.Service,
 ) (user.Service, error) {
 	store := ProvideStore(db, cfg)
 	s := &Service{
@@ -58,6 +62,8 @@ func ProvideService(
 	}); err != nil {
 		return s, err
 	}
+
+	bundleRegistry.RegisterSupportItemCollector(s.supportBundleCollector())
 	return s, nil
 }
 
@@ -357,24 +363,10 @@ func readQuotaConfig(cfg *setting.Cfg) (*quota.Map, error) {
 
 // CreateServiceAccount creates a service account in the user table and adds service account to an organisation in the org_user table
 func (s *Service) CreateServiceAccount(ctx context.Context, cmd *user.CreateUserCommand) (*user.User, error) {
-	cmdOrg := org.GetOrgIDForNewUserCommand{
-		Email:        cmd.Email,
-		Login:        cmd.Login,
-		OrgID:        cmd.OrgID,
-		OrgName:      cmd.OrgName,
-		SkipOrgSetup: cmd.SkipOrgSetup,
-	}
-	orgID, err := s.orgService.GetIDForNewUser(ctx, cmdOrg)
+	cmd.Email = cmd.Login
+	err := s.store.LoginConflict(ctx, cmd.Login, cmd.Email, s.cfg.CaseInsensitiveLogin)
 	if err != nil {
-		return nil, err
-	}
-	if cmd.Email == "" {
-		cmd.Email = cmd.Login
-	}
-
-	err = s.store.LoginConflict(ctx, cmd.Login, cmd.Email, s.cfg.CaseInsensitiveLogin)
-	if err != nil {
-		return nil, user.ErrUserAlreadyExists
+		return nil, serviceaccounts.ErrServiceAccountAlreadyExists.Errorf("service account with login %s already exists", cmd.Login)
 	}
 
 	// create user
@@ -382,15 +374,12 @@ func (s *Service) CreateServiceAccount(ctx context.Context, cmd *user.CreateUser
 		Email:            cmd.Email,
 		Name:             cmd.Name,
 		Login:            cmd.Login,
-		Company:          cmd.Company,
-		IsAdmin:          cmd.IsAdmin,
 		IsDisabled:       cmd.IsDisabled,
 		OrgID:            cmd.OrgID,
-		EmailVerified:    cmd.EmailVerified,
 		Created:          time.Now(),
 		Updated:          time.Now(),
 		LastSeenAt:       time.Now().AddDate(-10, 0, 0),
-		IsServiceAccount: cmd.IsServiceAccount,
+		IsServiceAccount: true,
 	}
 
 	salt, err := util.GetRandomString(10)
@@ -404,41 +393,67 @@ func (s *Service) CreateServiceAccount(ctx context.Context, cmd *user.CreateUser
 	}
 	usr.Rands = rands
 
-	if len(cmd.Password) > 0 {
-		encodedPassword, err := util.EncodePassword(cmd.Password, usr.Salt)
-		if err != nil {
-			return nil, err
-		}
-		usr.Password = encodedPassword
-	}
-
 	_, err = s.store.Insert(ctx, usr)
 	if err != nil {
 		return nil, err
 	}
 
 	// create org user link
-	if !cmd.SkipOrgSetup {
-		orgCmd := &org.AddOrgUserCommand{
-			OrgID:                     orgID,
-			UserID:                    usr.ID,
-			Role:                      org.RoleAdmin,
-			AllowAddingServiceAccount: true,
-		}
+	orgCmd := &org.AddOrgUserCommand{
+		OrgID:                     cmd.OrgID,
+		UserID:                    usr.ID,
+		Role:                      org.RoleType(cmd.DefaultOrgRole),
+		AllowAddingServiceAccount: true,
+	}
+	if err = s.orgService.AddOrgUser(ctx, orgCmd); err != nil {
+		return nil, err
+	}
 
-		if s.cfg.AutoAssignOrg && !usr.IsAdmin {
-			if len(cmd.DefaultOrgRole) > 0 {
-				orgCmd.Role = org.RoleType(cmd.DefaultOrgRole)
-			} else {
-				orgCmd.Role = org.RoleType(s.cfg.AutoAssignOrgRole)
-			}
-		}
+	return usr, nil
+}
 
-		if err = s.orgService.AddOrgUser(ctx, orgCmd); err != nil {
+func (s *Service) supportBundleCollector() supportbundles.Collector {
+	collectorFn := func(ctx context.Context) (*supportbundles.SupportItem, error) {
+		query := &user.SearchUsersQuery{
+			SignedInUser: &user.SignedInUser{
+				Login:            "sa-supportbundle",
+				OrgRole:          "Admin",
+				IsGrafanaAdmin:   true,
+				IsServiceAccount: true,
+				Permissions:      map[int64]map[string][]string{ac.GlobalOrgID: {ac.ActionUsersRead: {ac.ScopeGlobalUsersAll}}},
+			},
+			OrgID:      0,
+			Query:      "",
+			Page:       0,
+			Limit:      0,
+			AuthModule: "",
+			Filters:    []user.Filter{},
+			IsDisabled: new(bool),
+		}
+		res, err := s.Search(ctx, query)
+		if err != nil {
 			return nil, err
 		}
+
+		userBytes, err := json.MarshalIndent(res.Users, "", " ")
+		if err != nil {
+			return nil, err
+		}
+
+		return &supportbundles.SupportItem{
+			Filename:  "users.json",
+			FileBytes: userBytes,
+		}, nil
 	}
-	return usr, nil
+
+	return supportbundles.Collector{
+		UID:               "users",
+		DisplayName:       "User information",
+		Description:       "List users belonging to the Grafana instance",
+		IncludedByDefault: false,
+		Default:           false,
+		Fn:                collectorFn,
+	}
 }
 
 func hashUserIdentifier(identifier string, secret string) string {

@@ -54,13 +54,13 @@ func TestIntegrationInflux(t *testing.T) {
 	}
 
 	uid := "influxdb"
-	err := testEnv.Server.HTTPServer.DataSourcesService.AddDataSource(ctx, &datasources.AddDataSourceCommand{
-		OrgId:          u.OrgID,
+	_, err := testEnv.Server.HTTPServer.DataSourcesService.AddDataSource(ctx, &datasources.AddDataSourceCommand{
+		OrgID:          u.OrgID,
 		Access:         datasources.DS_ACCESS_PROXY,
 		Name:           "InfluxDB",
 		Type:           datasources.DS_INFLUXDB,
-		Uid:            uid,
-		Url:            outgoingServer.URL,
+		UID:            uid,
+		URL:            outgoingServer.URL,
 		BasicAuth:      true,
 		BasicAuthUser:  "basicAuthUser",
 		JsonData:       jsonData,

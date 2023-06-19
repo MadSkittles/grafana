@@ -82,10 +82,15 @@ func doRequestPage(ctx context.Context, logger log.Logger, r *http.Request, dsIn
 		r.Body = io.NopCloser(bytes.NewBuffer(buf))
 		r.Method = http.MethodPost
 	}
-	res, err := dsInfo.services[cloudMonitor].client.Do(r) //nolint:bodyclose // fixed in main
+	res, err := dsInfo.services[cloudMonitor].client.Do(r)
 	if err != nil {
 		return cloudMonitoringResponse{}, err
 	}
+
+	defer func() {
+		err := res.Body.Close()
+		logger.Warn("failed to close response body", "error", err)
+	}()
 
 	dnext, err := unmarshalResponse(logger, res)
 	if err != nil {

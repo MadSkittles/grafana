@@ -1,4 +1,3 @@
-import { css } from '@emotion/css';
 import classNames from 'classnames';
 import React, { PureComponent } from 'react';
 import { Subscription } from 'rxjs';
@@ -13,34 +12,29 @@ import {
   FieldConfigSource,
   getDataSourceRef,
   getDefaultTimeRange,
-  LinkModel,
   LoadingState,
   PanelData,
   PanelPlugin,
   PanelPluginMeta,
   PluginContextProvider,
-  renderMarkdown,
   TimeRange,
   toDataFrameDTO,
   toUtc,
 } from '@grafana/data';
 import { selectors } from '@grafana/e2e-selectors';
-import { getTemplateSrv, config, locationService, RefreshEvent } from '@grafana/runtime';
+import { config, locationService, RefreshEvent } from '@grafana/runtime';
 import { VizLegendOptions } from '@grafana/schema';
 import {
   ErrorBoundary,
   PanelChrome,
   PanelContext,
   PanelContextProvider,
-  PanelPadding,
   SeriesVisibilityChangeMode,
   AdHocFilterItem,
 } from '@grafana/ui';
 import { PANEL_BORDER } from 'app/core/constants';
 import { profiler } from 'app/core/profiler';
 import { applyPanelTimeOverrides } from 'app/features/dashboard/utils/panel';
-import { InspectTab } from 'app/features/inspector/types';
-import { getPanelLinksSupplier } from 'app/features/panel/panellinks/linkSuppliers';
 import { getDatasourceSrv } from 'app/features/plugins/datasource_srv';
 import { applyFilterFromTable } from 'app/features/variables/adhoc/actions';
 import { changeSeriesColorConfigFactory } from 'app/plugins/panel/timeseries/overrides/colorSeriesConfigFactory';
@@ -52,11 +46,11 @@ import { deleteAnnotation, saveAnnotation, updateAnnotation } from '../../annota
 import { getDashboardQueryRunner } from '../../query/state/DashboardQueryRunner/DashboardQueryRunner';
 import { getTimeSrv, TimeSrv } from '../services/TimeSrv';
 import { DashboardModel, PanelModel } from '../state';
+import { getPanelChromeProps } from '../utils/getPanelChromeProps';
 import { loadSnapshotData } from '../utils/loadSnapshotData';
 
 import { PanelHeader } from './PanelHeader/PanelHeader';
-import { PanelHeaderMenuWrapper } from './PanelHeader/PanelHeaderMenuWrapper';
-import { PanelHeaderTitleItems } from './PanelHeader/PanelHeaderTitleItems';
+import { PanelHeaderMenuWrapperNew } from './PanelHeader/PanelHeaderMenuWrapper';
 import { seriesVisibilityConfigFactory } from './SeriesVisibilityConfigFactory';
 import { liveTimer } from './liveTimer';
 
@@ -73,6 +67,7 @@ export interface Props {
   height: number;
   onInstanceStateChange: (value: any) => void;
   timezone?: string;
+  hideMenu?: boolean;
 }
 
 export interface State {
@@ -300,8 +295,14 @@ export class PanelStateWrapper extends PureComponent<Props, State> {
         }
         break;
       case LoadingState.Error:
-        const { error } = data;
-        if (error) {
+        const { error, errors } = data;
+        if (errors?.length) {
+          if (errors.length === 1) {
+            errorMessage = errors[0].message;
+          } else {
+            errorMessage = 'Multiple errors found. Click for more details';
+          }
+        } else if (error) {
           if (errorMessage !== error.message) {
             errorMessage = error.message;
           }
@@ -439,7 +440,7 @@ export class PanelStateWrapper extends PureComponent<Props, State> {
   };
 
   shouldSignalRenderingCompleted(loadingState: LoadingState, pluginMeta: PanelPluginMeta) {
-    return loadingState === LoadingState.Done || pluginMeta.skipDataQuery;
+    return loadingState === LoadingState.Done || loadingState === LoadingState.Error || pluginMeta.skipDataQuery;
   }
 
   skipFirstRender(loadingState: LoadingState) {
@@ -592,135 +593,54 @@ export class PanelStateWrapper extends PureComponent<Props, State> {
     return !panel.hasTitle();
   }
 
-  onShowPanelDescription = () => {
-    const { panel } = this.props;
-    const descriptionMarkdown = getTemplateSrv().replace(panel.description, panel.scopedVars);
-    const interpolatedDescription = renderMarkdown(descriptionMarkdown);
-    return interpolatedDescription;
-  };
-
-  onShowPanelLinks = (): LinkModel[] => {
-    const { panel } = this.props;
-    const linkSupplier = getPanelLinksSupplier(panel);
-    if (linkSupplier) {
-      const panelLinks = linkSupplier && linkSupplier.getLinks(panel.replaceVariables);
-      return panelLinks;
-    }
-    return [];
-  };
-
-  onOpenInspector = (e: React.SyntheticEvent, tab: string) => {
-    e.stopPropagation();
-    locationService.partial({ inspect: this.props.panel.id, inspectTab: tab });
-  };
-
-  onOpenErrorInspect = (e: React.SyntheticEvent) => {
-    e.stopPropagation();
-    locationService.partial({ inspect: this.props.panel.id, inspectTab: InspectTab.Error });
-  };
-
   render() {
     const { dashboard, panel, isViewing, isEditing, width, height, plugin } = this.props;
     const { errorMessage, data } = this.state;
     const { transparent } = panel;
 
     const alertState = data.alertState?.state;
+    const hasHoverHeader = this.hasOverlayHeader();
 
     const containerClassNames = classNames({
       'panel-container': true,
       'panel-container--absolute': isSoloRoute(locationService.getLocation().pathname),
       'panel-container--transparent': transparent,
-      'panel-container--no-title': this.hasOverlayHeader(),
+      'panel-container--no-title': hasHoverHeader,
       [`panel-alert-state--${alertState}`]: alertState !== undefined,
     });
 
-    const title = panel.getDisplayTitle();
-    const padding: PanelPadding = plugin.noPadding ? 'none' : 'md';
+    const panelChromeProps = getPanelChromeProps({ ...this.props, data });
 
-    const showTitleItems =
-      (panel.links && panel.links.length > 0 && this.onShowPanelLinks) ||
-      (data.series.length > 0 && data.series.some((v) => (v.meta?.notices?.length ?? 0) > 0)) ||
-      (data.request && data.request.timeInfo) ||
-      alertState;
-    const titleItems = showTitleItems && (
-      <PanelHeaderTitleItems
-        key="title-items"
-        alertState={alertState}
-        data={data}
-        panelId={panel.id}
-        panelLinks={panel.links}
-        onShowPanelLinks={this.onShowPanelLinks}
-      />
-    );
-
-    const overrideStyles: { menuItemsClassName?: string; menuWrapperClassName?: string; pos?: React.CSSProperties } = {
-      menuItemsClassName: undefined,
-      menuWrapperClassName: undefined,
-      pos: { top: 0, left: '-156px' },
-    };
-
-    if (config.featureToggles.newPanelChromeUI) {
-      // set override styles
-      overrideStyles.menuItemsClassName = css`
-        width: inherit;
-        top: inherit;
-        left: inherit;
-        position: inherit;
-        float: inherit;
-      `;
-      overrideStyles.menuWrapperClassName = css`
-        position: inherit;
-        width: inherit;
-        top: inherit;
-        left: inherit;
-        float: inherit;
-        .dropdown-submenu > .dropdown-menu {
-          position: absolute;
-        }
-      `;
-      overrideStyles.pos = undefined;
-    }
-
-    // custom styles is neeeded to override legacy panel-menu styles and prevent menu from being cut off
-    let menu;
-    if (!dashboard.meta.publicDashboardAccessToken) {
-      menu = (
-        <div data-testid="panel-dropdown">
-          <PanelHeaderMenuWrapper
-            style={overrideStyles.pos}
-            panel={panel}
-            dashboard={dashboard}
-            loadingState={data.state}
-            onClose={() => {}}
-            menuItemsClassName={overrideStyles.menuItemsClassName}
-            menuWrapperClassName={overrideStyles.menuWrapperClassName}
-          />
-        </div>
-      );
-    }
-
-    const dragClass = !(isViewing || isEditing) ? 'grid-drag-handle' : '';
     if (config.featureToggles.newPanelChromeUI) {
       // Shift the hover menu down if it's on the top row so it doesn't get clipped by topnav
       const hoverHeaderOffset = (panel.gridPos?.y ?? 0) === 0 ? -16 : undefined;
+
+      const menu = (
+        <div data-testid="panel-dropdown">
+          <PanelHeaderMenuWrapperNew panel={panel} dashboard={dashboard} loadingState={data.state} />
+        </div>
+      );
 
       return (
         <PanelChrome
           width={width}
           height={height}
-          title={title}
+          title={panelChromeProps.title}
           loadingState={data.state}
           statusMessage={errorMessage}
-          statusMessageOnClick={this.onOpenErrorInspect}
-          description={!!panel.description ? this.onShowPanelDescription : undefined}
-          titleItems={titleItems}
-          menu={menu}
-          dragClass={dragClass}
+          statusMessageOnClick={panelChromeProps.onOpenErrorInspect}
+          description={panelChromeProps.description}
+          titleItems={panelChromeProps.titleItems}
+          menu={this.props.hideMenu ? undefined : menu}
+          dragClass={panelChromeProps.dragClass}
           dragClassCancel="grid-drag-cancel"
-          padding={padding}
+          padding={panelChromeProps.padding}
           hoverHeaderOffset={hoverHeaderOffset}
-          hoverHeader={title ? false : true}
+          hoverHeader={panelChromeProps.hasOverlayHeader()}
           displayMode={transparent ? 'transparent' : 'default'}
+          onCancelQuery={panelChromeProps.onCancelQuery}
+          onOpenMenu={panelChromeProps.onOpenMenu}
+          panel={panel}
         >
           {(innerWidth, innerHeight) => (
             <>

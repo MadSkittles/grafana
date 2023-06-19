@@ -1,5 +1,5 @@
 import { css } from '@emotion/css';
-import React, { FC } from 'react';
+import React from 'react';
 
 import { GrafanaTheme2, LoadingState } from '@grafana/data';
 import { Icon, Tooltip, useStyles2 } from '@grafana/ui';
@@ -13,7 +13,7 @@ interface Props {
   panel: PanelModel;
 }
 
-export const PanelHeaderLoadingIndicator: FC<Props> = ({ state, onClick, panel }) => {
+export const PanelHeaderLoadingIndicator = ({ state, onClick, panel }: Props) => {
   const styles = useStyles2(getStyles);
   if ([LoadingState.Done, LoadingState.Error].includes(state)) {
     return (

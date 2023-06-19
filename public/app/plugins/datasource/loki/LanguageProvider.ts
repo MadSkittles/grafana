@@ -386,12 +386,6 @@ export default class LokiLanguageProvider extends LanguageProvider {
     return [];
   }
 
-  async refreshLogLabels(forceRefresh?: boolean) {
-    if ((this.labelKeys && Date.now().valueOf() - this.labelFetchTs > LABEL_REFRESH_INTERVAL) || forceRefresh) {
-      await this.fetchLabels();
-    }
-  }
-
   /**
    * Fetch labels for a selector. This is cached by its args but also by the global timeRange currently selected as
    * they can change over requested time.
@@ -468,21 +462,26 @@ export default class LokiLanguageProvider extends LanguageProvider {
     return labelValues ?? [];
   }
 
-  async getParserAndLabelKeys(
-    selector: string
-  ): Promise<{ extractedLabelKeys: string[]; hasJSON: boolean; hasLogfmt: boolean; unwrapLabelKeys: string[] }> {
+  async getParserAndLabelKeys(selector: string): Promise<{
+    extractedLabelKeys: string[];
+    hasJSON: boolean;
+    hasLogfmt: boolean;
+    hasPack: boolean;
+    unwrapLabelKeys: string[];
+  }> {
     const series = await this.datasource.getDataSamples({ expr: selector, refId: 'data-samples' });
 
     if (!series.length) {
-      return { extractedLabelKeys: [], unwrapLabelKeys: [], hasJSON: false, hasLogfmt: false };
+      return { extractedLabelKeys: [], unwrapLabelKeys: [], hasJSON: false, hasLogfmt: false, hasPack: false };
     }
 
-    const { hasLogfmt, hasJSON } = extractLogParserFromDataFrame(series[0]);
+    const { hasLogfmt, hasJSON, hasPack } = extractLogParserFromDataFrame(series[0]);
 
     return {
       extractedLabelKeys: extractLabelKeysFromDataFrame(series[0]),
       unwrapLabelKeys: extractUnwrapLabelKeysFromDataFrame(series[0]),
       hasJSON,
+      hasPack,
       hasLogfmt,
     };
   }

@@ -151,7 +151,7 @@ func (s *Service) QueryData(ctx context.Context, req *backend.QueryDataRequest) 
 
 	s.tracer.Inject(ctx, graphiteReq.Header, span)
 
-	res, err := dsInfo.HTTPClient.Do(graphiteReq) //nolint:bodyclose // fixed in main
+	res, err := dsInfo.HTTPClient.Do(graphiteReq)
 	if res != nil {
 		span.SetAttributes("graphite.response.code", res.StatusCode, attribute.Key("graphite.response.code").Int(res.StatusCode))
 	}
@@ -160,6 +160,13 @@ func (s *Service) QueryData(ctx context.Context, req *backend.QueryDataRequest) 
 		span.SetStatus(codes.Error, err.Error())
 		return &result, err
 	}
+
+	defer func() {
+		err := res.Body.Close()
+		if err != nil {
+			logger.Warn("failed to close response body", "error", err)
+		}
+	}()
 
 	frames, err := s.toDataFrames(logger, res, origRefIds)
 	if err != nil {

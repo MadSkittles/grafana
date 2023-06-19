@@ -16,10 +16,11 @@ import (
 	"time"
 
 	"cloud.google.com/go/storage"
-	"github.com/grafana/grafana/pkg/build/fsutil"
-	"github.com/grafana/grafana/pkg/build/gcloud"
 	"google.golang.org/api/iterator"
 	"google.golang.org/api/option"
+
+	"github.com/grafana/grafana/pkg/build/fsutil"
+	"github.com/grafana/grafana/pkg/build/gcloud"
 )
 
 var (
@@ -206,7 +207,6 @@ func (client *Client) RemoteCopy(ctx context.Context, file File, fromBucket, toB
 		return fmt.Errorf("failed to copy object %s, to %s, err: %w", file.FullPath, dstObject, err)
 	}
 
-	log.Printf("%s was successfully copied to %v bucket!.\n\n", file.FullPath, toBucket)
 	return nil
 }
 

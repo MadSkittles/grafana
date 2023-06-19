@@ -15,6 +15,7 @@ import (
 	"github.com/grafana/grafana/pkg/services/quota/quotaimpl"
 	"github.com/grafana/grafana/pkg/services/quota/quotatest"
 	"github.com/grafana/grafana/pkg/services/sqlstore"
+	"github.com/grafana/grafana/pkg/services/supportbundles/supportbundlestest"
 	"github.com/grafana/grafana/pkg/services/tag/tagimpl"
 	"github.com/grafana/grafana/pkg/services/team/teamimpl"
 	"github.com/grafana/grafana/pkg/services/user"
@@ -28,7 +29,7 @@ func TestIntegrationDashboardACLDataAccess(t *testing.T) {
 	var sqlStore *sqlstore.SQLStore
 	var currentUser user.User
 	var savedFolder, childDash *dashboards.Dashboard
-	var dashboardStore *DashboardStore
+	var dashboardStore dashboards.Store
 
 	setup := func(t *testing.T) int64 {
 		sqlStore = db.InitTestDB(t)
@@ -281,7 +282,7 @@ func createUser(t *testing.T, sqlStore *sqlstore.SQLStore, name string, role str
 	qs := quotaimpl.ProvideService(sqlStore, sqlStore.Cfg)
 	orgService, err := orgimpl.ProvideService(sqlStore, sqlStore.Cfg, qs)
 	require.NoError(t, err)
-	usrSvc, err := userimpl.ProvideService(sqlStore, orgService, sqlStore.Cfg, nil, nil, qs)
+	usrSvc, err := userimpl.ProvideService(sqlStore, orgService, sqlStore.Cfg, nil, nil, qs, supportbundlestest.NewFakeBundleService())
 	require.NoError(t, err)
 
 	o, err := orgService.CreateWithMember(context.Background(), &org.CreateOrgCommand{Name: fmt.Sprintf("test org %d", time.Now().UnixNano())})

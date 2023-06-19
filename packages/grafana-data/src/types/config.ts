@@ -76,16 +76,6 @@ export interface UnifiedAlertingConfig {
   minInterval: string;
 }
 
-/**
- * Describes the plugins that should be preloaded prior to start Grafana.
- *
- * @public
- */
-export type PreloadPlugin = {
-  path: string;
-  version: string;
-};
-
 /** Supported OAuth services
  *
  * @public
@@ -210,9 +200,8 @@ export interface GrafanaConfig {
   /** @deprecated Use `theme2` instead. */
   theme: GrafanaTheme;
   theme2: GrafanaTheme2;
-  pluginsToPreload: PreloadPlugin[];
-  featureToggles: FeatureToggles;
   anonymousEnabled: boolean;
+  featureToggles: FeatureToggles;
   licenseInfo: LicenseInfo;
   http2Enabled: boolean;
   dateFormats?: SystemDateFormatSettings;
@@ -234,6 +223,13 @@ export interface GrafanaConfig {
   rudderstackDataPlaneUrl: string | undefined;
   rudderstackSdkUrl: string | undefined;
   rudderstackConfigUrl: string | undefined;
+  sqlConnectionLimits: SqlConnectionLimits;
+}
+
+export interface SqlConnectionLimits {
+  maxOpenConns: number;
+  maxIdleConns: number;
+  connMaxLifetime: number;
 }
 
 export interface AuthSettings {
@@ -247,5 +243,6 @@ export interface AuthSettings {
   OktaSkipOrgRoleSync?: boolean;
   AzureADSkipOrgRoleSync?: boolean;
   GoogleSkipOrgRoleSync?: boolean;
+  GenericOAuthSkipOrgRoleSync?: boolean;
   DisableSyncLock?: boolean;
 }

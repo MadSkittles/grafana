@@ -20,7 +20,7 @@ export function getNavTitle(navId: string | undefined) {
     case 'folder':
       return t('nav.create-folder.title', 'Folder');
     case 'import':
-      return t('nav.create-import.title', 'Import');
+      return t('nav.create-import.title', 'Import dashboard');
     case 'alert':
       return t('nav.create-alert.title', 'Create alert rule');
     case 'starred':
@@ -46,7 +46,7 @@ export function getNavTitle(navId: string | undefined) {
     case 'dashboards/folder/new':
       return t('nav.new-folder.title', 'New folder');
     case 'dashboards/import':
-      return t('nav.create-import.title', 'Import');
+      return t('nav.create-import.title', 'Import dashboard');
     case 'scenes':
       return t('nav.scenes.title', 'Scenes');
     case 'explore':
@@ -109,20 +109,12 @@ export function getNavTitle(navId: string | undefined) {
       return t('nav.storage.title', 'Storage');
     case 'upgrading':
       return t('nav.upgrading.title', 'Stats and license');
-    case 'live':
-      return t('nav.live.title', 'Event streaming');
-    case 'live-status':
-      return t('nav.live-status.title', 'Status');
-    case 'live-pipeline':
-      return t('nav.live-pipeline.title', 'Pipeline');
-    case 'live-cloud':
-      return t('nav.live-cloud.title', 'Cloud');
     case 'monitoring':
-      return t('nav.monitoring.title', 'Monitoring');
+      return t('nav.monitoring.title', 'Observability');
     case 'apps':
       return t('nav.apps.title', 'Apps');
     case 'alerts-and-incidents':
-      return t('nav.alerts-and-incidents.title', 'Alerts & incidents');
+      return t('nav.alerts-and-incidents.title', 'Alerts & IRM');
     case 'help':
       return t('nav.help.title', 'Help');
     case 'profile/settings':
@@ -148,6 +140,8 @@ export function getNavSubTitle(navId: string | undefined) {
       return config.featureToggles.topnav
         ? t('nav.dashboards.subtitle', 'Create and manage dashboards to visualize your data')
         : undefined;
+    case 'manage-folder':
+      return t('nav.manage-folder.subtitle', 'Manage folder dashboards and permissions');
     case 'dashboards/playlists':
       return t('nav.playlists.subtitle', 'Groups of dashboards that are displayed in a sequence');
     case 'dashboards/snapshots':

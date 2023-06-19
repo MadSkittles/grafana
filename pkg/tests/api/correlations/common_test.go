@@ -14,6 +14,7 @@ import (
 	"github.com/grafana/grafana/pkg/services/datasources"
 	"github.com/grafana/grafana/pkg/services/org/orgimpl"
 	"github.com/grafana/grafana/pkg/services/quota/quotaimpl"
+	"github.com/grafana/grafana/pkg/services/supportbundles/supportbundlestest"
 	"github.com/grafana/grafana/pkg/services/user"
 	"github.com/grafana/grafana/pkg/services/user/userimpl"
 	"github.com/grafana/grafana/pkg/tests/testinfra"
@@ -141,7 +142,7 @@ func (c TestContext) createUser(cmd user.CreateUserCommand) User {
 	quotaService := quotaimpl.ProvideService(store, store.Cfg)
 	orgService, err := orgimpl.ProvideService(store, store.Cfg, quotaService)
 	require.NoError(c.t, err)
-	usrSvc, err := userimpl.ProvideService(store, orgService, store.Cfg, nil, nil, quotaService)
+	usrSvc, err := userimpl.ProvideService(store, orgService, store.Cfg, nil, nil, quotaService, supportbundlestest.NewFakeBundleService())
 	require.NoError(c.t, err)
 
 	user, err := usrSvc.Create(context.Background(), &cmd)
@@ -153,11 +154,12 @@ func (c TestContext) createUser(cmd user.CreateUserCommand) User {
 	}
 }
 
-func (c TestContext) createDs(cmd *datasources.AddDataSourceCommand) {
+func (c TestContext) createDs(cmd *datasources.AddDataSourceCommand) *datasources.DataSource {
 	c.t.Helper()
 
-	err := c.env.Server.HTTPServer.DataSourcesService.AddDataSource(context.Background(), cmd)
+	dataSource, err := c.env.Server.HTTPServer.DataSourcesService.AddDataSource(context.Background(), cmd)
 	require.NoError(c.t, err)
+	return dataSource
 }
 
 func (c TestContext) createCorrelation(cmd correlations.CreateCorrelationCommand) correlations.Correlation {

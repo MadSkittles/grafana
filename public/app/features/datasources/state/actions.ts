@@ -11,6 +11,7 @@ import {
 import { updateNavIndex } from 'app/core/actions';
 import { contextSrv } from 'app/core/core';
 import { getBackendSrv } from 'app/core/services/backend_srv';
+import { ROUTES as CONNECTIONS_ROUTES } from 'app/features/connections/constants';
 import { getDatasourceSrv } from 'app/features/plugins/datasource_srv';
 import { getPluginSettings } from 'app/features/plugins/pluginSettings';
 import { importDataSourcePlugin } from 'app/features/plugins/plugin_loader';
@@ -117,7 +118,7 @@ export const testDataSource = (
           plugin_id: dsApi.type,
           datasource_uid: dsApi.uid,
           success: true,
-          editLink,
+          path: editLink,
         });
       } catch (err) {
         let message: string | undefined;
@@ -138,7 +139,7 @@ export const testDataSource = (
           plugin_id: dsApi.type,
           datasource_uid: dsApi.uid,
           success: false,
-          editLink,
+          path: editLink,
         });
       }
     });
@@ -230,7 +231,7 @@ export function addDataSource(
       plugin_id: plugin.id,
       datasource_uid: result.datasource.uid,
       plugin_version: result.meta?.info?.version,
-      editLink,
+      path: editLink,
     });
 
     locationService.push(editLink);
@@ -261,6 +262,10 @@ export function deleteLoadedDataSource(): ThunkResult<void> {
     await api.deleteDataSource(uid);
     await getDatasourceSrv().reload();
 
-    locationService.push('/datasources');
+    const datasourcesUrl = config.featureToggles.dataConnectionsConsole
+      ? CONNECTIONS_ROUTES.DataSources
+      : '/datasources';
+
+    locationService.push(datasourcesUrl);
   };
 }
