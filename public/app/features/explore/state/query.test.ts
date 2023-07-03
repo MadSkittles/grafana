@@ -4,7 +4,6 @@ import { thunkTester } from 'test/core/thunk/thunkTester';
 import { assertIsDefined } from 'test/helpers/asserts';
 
 import {
-  ArrayVector,
   DataQueryResponse,
   DataSourceApi,
   DataSourceJsonData,
@@ -17,11 +16,12 @@ import {
 } from '@grafana/data';
 import { config } from '@grafana/runtime';
 import { DataQuery, DataSourceRef } from '@grafana/schema';
-import { ExploreId, ExploreItemState, StoreState, ThunkDispatch } from 'app/types';
+import { createAsyncThunk, ExploreId, ExploreItemState, StoreState, ThunkDispatch } from 'app/types';
 
 import { reducerTester } from '../../../../test/core/redux/reducerTester';
 import { configureStore } from '../../../store/configureStore';
 import { setTimeSrv, TimeSrv } from '../../dashboard/services/TimeSrv';
+import { makeLogs } from '../__mocks__/makeLogs';
 import { supplementaryQueryTypes } from '../utils/supplementaryQueries';
 
 import { createDefaultInitialState } from './helpers';
@@ -41,6 +41,9 @@ import {
   setSupplementaryQueryEnabled,
   addQueryRow,
   cleanSupplementaryQueryDataProviderAction,
+  clearLogs,
+  queryStreamUpdatedAction,
+  QueryEndedPayload,
   changeQueries,
 } from './query';
 import * as actions from './query';
@@ -107,7 +110,7 @@ function setupQueryResponse(state: StoreState) {
       error: { message: 'test error' },
       data: [
         new MutableDataFrame({
-          fields: [{ name: 'test', values: new ArrayVector() }],
+          fields: [{ name: 'test', values: [] }],
           meta: {
             preferredVisualisationType: 'graph',
           },
@@ -239,12 +242,12 @@ describe('running queries', () => {
 });
 
 describe('changeQueries', () => {
+  afterEach(() => {
+    jest.restoreAllMocks();
+  });
   // Due to how spyOn works (it removes `type`, `match` and `toString` from the spied function, on which we rely on in the reducer),
   // we are repeating the following tests twice, once to chck the resulting state and once to check that the correct actions are dispatched.
   describe('calls the correct actions', () => {
-    afterEach(() => {
-      jest.restoreAllMocks();
-    });
     it('should import queries when datasource is changed', async () => {
       jest.spyOn(actions, 'importQueries');
       jest.spyOn(actions, 'changeQueriesAction');
@@ -359,6 +362,35 @@ describe('changeQueries', () => {
         queryType: 'someValue',
       });
     });
+  });
+
+  it('runs remaining queries when one query is removed', async () => {
+    jest.spyOn(actions, 'runQueries').mockImplementation(createAsyncThunk('@explore/runQueries', () => {}));
+
+    const originalQueries = [
+      { refId: 'A', as: 1, datasource: datasources[0].getRef() },
+      { refId: 'B', as: 2, datasource: datasources[0].getRef() },
+    ];
+
+    const { dispatch } = configureStore({
+      ...defaultInitialState,
+      explore: {
+        left: {
+          ...defaultInitialState.explore.left,
+          datasourceInstance: datasources[0],
+          queries: originalQueries,
+        },
+      },
+    } as unknown as Partial<StoreState>);
+
+    await dispatch(
+      changeQueries({
+        queries: [originalQueries[0]],
+        exploreId: ExploreId.left,
+      })
+    );
+
+    expect(actions.runQueries).toHaveBeenCalled();
   });
 });
 
@@ -922,6 +954,79 @@ describe('reducer', () => {
       expect(
         getState().explore[ExploreId.left].supplementaryQueries[SupplementaryQueryType.LogsSample].dataSubscription
       ).toBeUndefined();
+    });
+  });
+  describe('clear live logs', () => {
+    it('should clear current log rows', async () => {
+      const logRows = makeLogs(10);
+
+      const { dispatch, getState }: { dispatch: ThunkDispatch; getState: () => StoreState } = configureStore({
+        ...defaultInitialState,
+        explore: {
+          [ExploreId.left]: {
+            ...defaultInitialState.explore[ExploreId.left],
+            queryResponse: {
+              state: LoadingState.Streaming,
+            },
+            logsResult: {
+              hasUniqueLabels: false,
+              rows: logRows,
+            },
+          },
+        },
+      } as unknown as Partial<StoreState>);
+      expect(getState().explore[ExploreId.left].logsResult?.rows.length).toBe(logRows.length);
+
+      await dispatch(clearLogs({ exploreId: ExploreId.left }));
+
+      expect(getState().explore[ExploreId.left].logsResult?.rows.length).toBe(0);
+      expect(getState().explore[ExploreId.left].clearedAtIndex).toBe(logRows.length - 1);
+    });
+
+    it('should filter new log rows', async () => {
+      const oldLogRows = makeLogs(10);
+      const newLogRows = makeLogs(5);
+      const allLogRows = [...oldLogRows, ...newLogRows];
+
+      const { dispatch, getState }: { dispatch: ThunkDispatch; getState: () => StoreState } = configureStore({
+        ...defaultInitialState,
+        explore: {
+          [ExploreId.left]: {
+            ...defaultInitialState.explore[ExploreId.left],
+            isLive: true,
+            queryResponse: {
+              state: LoadingState.Streaming,
+            },
+            logsResult: {
+              hasUniqueLabels: false,
+              rows: oldLogRows,
+            },
+          },
+        },
+      } as unknown as Partial<StoreState>);
+
+      expect(getState().explore[ExploreId.left].logsResult?.rows.length).toBe(oldLogRows.length);
+
+      await dispatch(clearLogs({ exploreId: ExploreId.left }));
+      await dispatch(
+        queryStreamUpdatedAction({
+          exploreId: ExploreId.left,
+          response: {
+            request: true,
+            traceFrames: [],
+            nodeGraphFrames: [],
+            rawPrometheusFrames: [],
+            flameGraphFrames: [],
+            logsResult: {
+              hasUniqueLabels: false,
+              rows: allLogRows,
+            },
+          },
+        } as unknown as QueryEndedPayload)
+      );
+
+      expect(getState().explore[ExploreId.left].logsResult?.rows.length).toBe(newLogRows.length);
+      expect(getState().explore[ExploreId.left].clearedAtIndex).toBe(oldLogRows.length - 1);
     });
   });
 });

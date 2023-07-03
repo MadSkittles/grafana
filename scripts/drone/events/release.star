@@ -9,7 +9,6 @@ load(
     "build_docker_images_step",
     "build_frontend_package_step",
     "build_frontend_step",
-    "build_image",
     "build_plugins_step",
     "build_storybook_step",
     "clone_enterprise_step",
@@ -28,7 +27,6 @@ load(
     "package_step",
     "postgres_integration_tests_step",
     "publish_grafanacom_step",
-    "publish_image",
     "publish_images_step",
     "publish_linux_packages_step",
     "redis_integration_tests_step",
@@ -62,6 +60,14 @@ load(
     "test_backend_enterprise",
 )
 load("scripts/drone/vault.star", "from_secret", "prerelease_bucket")
+load(
+    "scripts/drone/utils/images.star",
+    "images",
+)
+load(
+    "scripts/drone/pipelines/whats_new_checker.star",
+    "whats_new_checker_pipeline",
+)
 
 ver_mode = "release"
 release_trigger = {
@@ -83,7 +89,7 @@ release_trigger = {
 def store_npm_packages_step():
     return {
         "name": "store-npm-packages",
-        "image": build_image,
+        "image": images["build_image"],
         "depends_on": [
             "compile-build-cmd",
             "build-frontend-packages",
@@ -98,7 +104,7 @@ def store_npm_packages_step():
 def retrieve_npm_packages_step():
     return {
         "name": "retrieve-npm-packages",
-        "image": publish_image,
+        "image": images["publish_image"],
         "depends_on": [
             "compile-build-cmd",
             "yarn-install",
@@ -114,7 +120,7 @@ def retrieve_npm_packages_step():
 def release_npm_packages_step():
     return {
         "name": "release-npm-packages",
-        "image": build_image,
+        "image": images["build_image"],
         "depends_on": [
             "compile-build-cmd",
             "retrieve-npm-packages",
@@ -141,7 +147,7 @@ def oss_pipelines(ver_mode = ver_mode, trigger = release_trigger):
 
     environment = {"EDITION": "oss"}
 
-    services = integration_test_services(edition = "oss")
+    services = integration_test_services()
     volumes = integration_test_services_volumes()
 
     init_steps = [
@@ -203,29 +209,24 @@ def oss_pipelines(ver_mode = ver_mode, trigger = release_trigger):
     integration_test_steps = [
         postgres_integration_tests_step(),
         mysql_integration_tests_step(),
+        redis_integration_tests_step(),
+        memcached_integration_tests_step(),
     ]
+
+    pipelines = []
 
     # We don't need to run integration tests at release time since they have
     # been run multiple times before:
     if ver_mode in ("release"):
+        pipelines.append(whats_new_checker_pipeline(release_trigger))
         integration_test_steps = []
         volumes = []
 
-    windows_pipeline = pipeline(
-        name = "{}-oss-windows".format(ver_mode),
-        edition = "oss",
-        trigger = trigger,
-        steps = get_windows_steps(edition = "oss", ver_mode = ver_mode),
-        platform = "windows",
-        depends_on = [
-            "{}-oss-build-e2e-publish".format(ver_mode),
-            "{}-oss-test-frontend".format(ver_mode),
-            "{}-oss-test-backend".format(ver_mode),
-        ],
-        environment = environment,
-    )
-
-    pipelines = [
+    windows_pipeline_dependencies = [
+        "{}-oss-build-e2e-publish".format(ver_mode),
+        "{}-oss-test-frontend".format(ver_mode),
+    ]
+    pipelines.extend([
         pipeline(
             name = "{}-oss-build-e2e-publish".format(ver_mode),
             edition = "oss",
@@ -237,7 +238,7 @@ def oss_pipelines(ver_mode = ver_mode, trigger = release_trigger):
         ),
         test_frontend(trigger, ver_mode),
         test_backend(trigger, ver_mode),
-    ]
+    ])
 
     if ver_mode not in ("release"):
         pipelines.append(pipeline(
@@ -256,6 +257,16 @@ def oss_pipelines(ver_mode = ver_mode, trigger = release_trigger):
             environment = environment,
             volumes = volumes,
         ))
+
+    windows_pipeline = pipeline(
+        name = "{}-oss-windows".format(ver_mode),
+        edition = "oss",
+        trigger = trigger,
+        steps = get_windows_steps(edition = "oss", ver_mode = ver_mode),
+        platform = "windows",
+        depends_on = windows_pipeline_dependencies,
+        environment = environment,
+    )
 
     pipelines.append(windows_pipeline)
 
@@ -282,7 +293,7 @@ def enterprise_pipelines(ver_mode = ver_mode, trigger = release_trigger):
 
     environment = {"EDITION": "enterprise"}
 
-    services = integration_test_services(edition = "enterprise")
+    services = integration_test_services()
     volumes = integration_test_services_volumes()
 
     init_steps = [
@@ -549,7 +560,7 @@ def publish_artifacts_step(mode):
         security = "--security "
     return {
         "name": "publish-artifacts",
-        "image": publish_image,
+        "image": images["publish_image"],
         "environment": {
             "GCP_KEY": from_secret("gcp_key"),
             "PRERELEASE_BUCKET": from_secret("prerelease_bucket"),
@@ -567,7 +578,7 @@ def publish_artifacts_step(mode):
 def publish_static_assets_step():
     return {
         "name": "publish-static-assets",
-        "image": publish_image,
+        "image": images["publish_image"],
         "environment": {
             "GCP_KEY": from_secret("gcp_key"),
             "PRERELEASE_BUCKET": from_secret("prerelease_bucket"),
@@ -582,7 +593,7 @@ def publish_static_assets_step():
 def publish_storybook_step():
     return {
         "name": "publish-storybook",
-        "image": publish_image,
+        "image": images["publish_image"],
         "environment": {
             "GCP_KEY": from_secret("gcp_key"),
             "PRERELEASE_BUCKET": from_secret("prerelease_bucket"),
@@ -734,11 +745,9 @@ def integration_test_pipelines():
     }
     pipelines = []
     volumes = integration_test_services_volumes()
-    oss_integration_test_steps = [
+    integration_test_steps = [
         postgres_integration_tests_step(),
         mysql_integration_tests_step(),
-    ]
-    enterprise_integration_test_steps = oss_integration_test_steps + [
         redis_integration_tests_step(),
         memcached_integration_tests_step(),
     ]
@@ -748,7 +757,7 @@ def integration_test_pipelines():
         name = "integration-tests-oss",
         edition = "oss",
         trigger = trigger,
-        services = integration_test_services(edition = "oss"),
+        services = integration_test_services(),
         steps = [
                     download_grabpl_step(),
                     identify_runner_step(),
@@ -756,7 +765,7 @@ def integration_test_pipelines():
                     verify_gen_jsonnet_step(),
                     wire_install_step(),
                 ] +
-                oss_integration_test_steps,
+                integration_test_steps,
         environment = {"EDITION": "oss"},
         volumes = volumes,
     ))
@@ -765,7 +774,7 @@ def integration_test_pipelines():
         name = "integration-tests-enterprise",
         edition = "enterprise",
         trigger = trigger,
-        services = integration_test_services(edition = "enterprise"),
+        services = integration_test_services(),
         steps = [
                     download_grabpl_step(),
                     identify_runner_step(),
@@ -784,9 +793,51 @@ def integration_test_pipelines():
                 [
                     wire_install_step(),
                 ] +
-                enterprise_integration_test_steps,
+                integration_test_steps,
         environment = {"EDITION": "enterprise"},
         volumes = volumes,
     ))
 
     return pipelines
+
+def verify_release_pipeline(
+        name = "verify-prerelease-assets",
+        bucket = from_secret(prerelease_bucket),
+        gcp_key = from_secret("gcp_key"),
+        version = "${DRONE_TAG}",
+        trigger = release_trigger,
+        depends_on = [
+            "release-oss-build-e2e-publish",
+            "release-enterprise-build-e2e-publish",
+            "release-enterprise2-build-e2e-publish",
+            "release-oss-windows",
+            "release-enterprise-windows",
+        ]):
+    """
+    Runs a script that 'gsutil stat's every artifact that should have been produced by the pre-release process.
+
+    Returns:
+      A single Drone pipeline that runs the script.
+    """
+    step = {
+        "name": "gsutil-stat",
+        "depends_on": ["clone"],
+        "image": images["cloudsdk_image"],
+        "environment": {
+            "BUCKET": bucket,
+            "GCP_KEY": gcp_key,
+        },
+        "commands": [
+            "apt-get update && apt-get install -yq gettext",
+            "printenv GCP_KEY | base64 -d > /tmp/key.json",
+            "gcloud auth activate-service-account --key-file=/tmp/key.json",
+            "./scripts/list-release-artifacts.sh {} | xargs -n1 gsutil stat".format(version),
+        ],
+    }
+    return pipeline(
+        depends_on = depends_on,
+        name = name,
+        edition = "all",
+        trigger = trigger,
+        steps = [step],
+    )

@@ -2,7 +2,6 @@ import React from 'react';
 import uPlot from 'uplot';
 
 import {
-  ArrayVector,
   DataFrame,
   DashboardCursorSync,
   DataHoverPayload,
@@ -32,6 +31,7 @@ import {
   VisibilityMode,
   TimelineValueAlignment,
   HideableFieldConfig,
+  MappingType,
 } from '@grafana/schema';
 import {
   FIXED_UNIT,
@@ -113,6 +113,14 @@ export const preparePlotConfigBuilder: UPlotConfigPrepFn<UPlotConfigOptions> = (
     return !(mode && field.display && mode.startsWith('continuous-'));
   };
 
+  const hasMappedNull = (field: Field) => {
+    return (
+      field.config.mappings?.some(
+        (mapping) => mapping.type === MappingType.SpecialValue && mapping.options.match === 'null'
+      ) || false
+    );
+  };
+
   const getValueColorFn = (seriesIdx: number, value: unknown) => {
     const field = frame.fields[seriesIdx];
 
@@ -131,6 +139,7 @@ export const preparePlotConfigBuilder: UPlotConfigPrepFn<UPlotConfigOptions> = (
     mode: mode!,
     numSeries: frame.fields.length - 1,
     isDiscrete: (seriesIdx) => isDiscrete(frame.fields[seriesIdx]),
+    hasMappedNull: (seriesIdx) => hasMappedNull(frame.fields[seriesIdx]),
     mergeValues,
     rowHeight: rowHeight,
     colWidth: colWidth,
@@ -371,7 +380,7 @@ export function mergeThresholdValues(field: Field, theme: GrafanaTheme2): Field 
     textToColor.set(items[i].label, items[i].color!);
   }
 
-  let input = field.values.toArray();
+  let input = field.values;
   const vals = new Array<String | undefined>(field.values.length);
   if (thresholds.mode === ThresholdsMode.Percentage) {
     const { min, max } = getFieldConfigWithMinMax(field);
@@ -403,7 +412,7 @@ export function mergeThresholdValues(field: Field, theme: GrafanaTheme2): Field 
       },
     },
     type: FieldType.string,
-    values: new ArrayVector(vals),
+    values: vals,
     display: (value) => ({
       text: String(value),
       color: textToColor.get(String(value)),
@@ -571,7 +580,7 @@ export function getFieldLegendItem(fields: Field[], theme: GrafanaTheme2): VizLe
   let stateColors: Map<string, string | undefined> = new Map();
 
   fields.forEach((field) => {
-    field.values.toArray().forEach((v) => {
+    field.values.forEach((v) => {
       let state = field.display!(v);
       if (state.color) {
         stateColors.set(state.text, state.color!);
@@ -612,13 +621,13 @@ export function findNextStateIndex(field: Field, datapointIdx: number) {
     return null;
   }
 
-  const startValue = field.values.get(datapointIdx);
+  const startValue = field.values[datapointIdx];
 
   while (end === undefined) {
     if (rightPointer >= field.values.length) {
       return null;
     }
-    const rightValue = field.values.get(rightPointer);
+    const rightValue = field.values[rightPointer];
 
     if (rightValue === undefined || rightValue === startValue) {
       rightPointer++;

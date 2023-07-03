@@ -10,11 +10,11 @@ import {
   DataQueryErrorType,
   DataQueryResponse,
   DataSourceApi,
-  hasLogsVolumeSupport,
   hasQueryExportSupport,
   hasQueryImportSupport,
   HistoryItem,
   LoadingState,
+  LogsVolumeType,
   PanelEvents,
   QueryFixAction,
   ScopedVars,
@@ -61,7 +61,7 @@ import {
 import { addHistoryItem, historyUpdatedAction, loadRichHistory } from './history';
 import { stateSave } from './main';
 import { updateTime } from './time';
-import { createCacheKey, getResultsFromCache } from './utils';
+import { createCacheKey, getResultsFromCache, filterLogRowsByIndex } from './utils';
 
 //
 // Actions and Payloads
@@ -191,6 +191,10 @@ export interface SetPausedStatePayload {
 }
 export const setPausedStateAction = createAction<SetPausedStatePayload>('explore/setPausedState');
 
+export interface ClearLogsPayload {
+  exploreId: ExploreId;
+}
+export const clearLogs = createAction<ClearLogsPayload>('explore/clearLogs');
 /**
  * Start a scan for more results using the given scanner.
  * @param exploreId Explore area
@@ -326,7 +330,7 @@ export const changeQueries = createAsyncThunk<void, ChangeQueriesPayload>(
     }
 
     // if we are removing a query we want to run the remaining ones
-    if (queries.length < queries.length) {
+    if (queries.length < oldQueries.length) {
       dispatch(runQueries(exploreId));
     }
   }
@@ -346,7 +350,7 @@ export const importQueries = (
   sourceDataSource: DataSourceApi | undefined | null,
   targetDataSource: DataSourceApi,
   singleQueryChangeRef?: string // when changing one query DS to another in a mixed environment, we do not want to change all queries, just the one being changed
-): ThunkResult<Promise<void>> => {
+): ThunkResult<Promise<DataQuery[] | void>> => {
   return async (dispatch) => {
     if (!sourceDataSource) {
       // explore not initialized
@@ -403,6 +407,7 @@ export const importQueries = (
     }
 
     dispatch(queriesImportedAction({ exploreId, queries: nextQueries }));
+    return nextQueries;
   };
 };
 
@@ -708,27 +713,6 @@ const handleSupplementaryQueries = createAsyncThunk(
             dispatch(loadSupplementaryQueryData(exploreId, type));
           }
         }
-        // Code below (else if scenario) is for backward compatibility with data sources that don't support supplementary queries
-        // TODO: Remove in next major version - v10 (https://github.com/grafana/grafana/issues/61845)
-      } else if (hasLogsVolumeSupport(datasourceInstance) && type === SupplementaryQueryType.LogsVolume) {
-        const dataProvider = datasourceInstance.getLogsVolumeDataProvider({
-          ...transaction.request,
-          requestId: `${transaction.request.requestId}_${snakeCase(type)}`,
-        });
-        dispatch(
-          storeSupplementaryQueryDataProviderAction({
-            exploreId,
-            type,
-            dataProvider,
-          })
-        );
-
-        if (!canReuseSupplementaryQueryData(supplementaryQueries[type].data, queries, absoluteRange)) {
-          dispatch(cleanSupplementaryQueryAction({ exploreId, type }));
-          if (supplementaryQueries[type].enabled) {
-            dispatch(loadSupplementaryQueryData(exploreId, type));
-          }
-        }
       } else {
         // If data source instance doesn't support this supplementary query, we clean the data provider
         dispatch(
@@ -765,6 +749,12 @@ function canReuseSupplementaryQueryData(
     head
   );
 
+  const allSupportZoomingIn = supplementaryQueryData.data.every((data: DataFrame) => {
+    // If log volume is based on returned log lines (i.e. LogsVolumeType.Limited),
+    // zooming in may return different results, so we don't want to reuse the data
+    return data.meta?.custom?.logsVolumeType === LogsVolumeType.FullRange;
+  });
+
   const allQueriesAreTheSame = deepEqual(newQueriesByRefId, existingDataByRefId);
 
   const allResultsHaveWiderRange = supplementaryQueryData.data.every((data: DataFrame) => {
@@ -777,7 +767,7 @@ function canReuseSupplementaryQueryData(
     return hasWiderRange;
   });
 
-  return allQueriesAreTheSame && allResultsHaveWiderRange;
+  return allSupportZoomingIn && allQueriesAreTheSame && allResultsHaveWiderRange;
 }
 
 /**
@@ -1103,6 +1093,41 @@ export const queryReducer = (state: ExploreItemState, action: AnyAction): Explor
     };
   }
 
+  if (clearLogs.match(action)) {
+    if (!state.logsResult) {
+      return {
+        ...state,
+        clearedAtIndex: null,
+      };
+    }
+
+    // When in loading state, clear logs and set clearedAtIndex as null.
+    // Initially loaded logs will be fully replaced by incoming streamed logs, which may have a different length.
+    if (state.queryResponse.state === LoadingState.Loading) {
+      return {
+        ...state,
+        clearedAtIndex: null,
+        logsResult: {
+          ...state.logsResult,
+          rows: [],
+        },
+      };
+    }
+
+    const lastItemIndex = state.clearedAtIndex
+      ? state.clearedAtIndex + state.logsResult.rows.length
+      : state.logsResult.rows.length - 1;
+
+    return {
+      ...state,
+      clearedAtIndex: lastItemIndex,
+      logsResult: {
+        ...state.logsResult,
+        rows: [],
+      },
+    };
+  }
+
   return state;
 };
 
@@ -1127,7 +1152,6 @@ const getCorrelations = () => {
     }
   });
 };
-
 export const processQueryResponse = (
   state: ExploreItemState,
   action: PayloadAction<QueryEndedPayload>
@@ -1183,7 +1207,10 @@ export const processQueryResponse = (
     graphResult,
     tableResult,
     rawPrometheusResult,
-    logsResult,
+    logsResult:
+      state.isLive && logsResult
+        ? { ...logsResult, rows: filterLogRowsByIndex(state.clearedAtIndex, logsResult.rows) }
+        : logsResult,
     loading: loadingState === LoadingState.Loading || loadingState === LoadingState.Streaming,
     showLogs: !!logsResult,
     showMetrics: !!graphResult,
@@ -1192,5 +1219,6 @@ export const processQueryResponse = (
     showNodeGraph: !!nodeGraphFrames.length,
     showRawPrometheus: !!rawPrometheusFrames.length,
     showFlameGraph: !!flameGraphFrames.length,
+    clearedAtIndex: state.isLive ? state.clearedAtIndex : null,
   };
 };
