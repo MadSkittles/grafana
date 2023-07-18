@@ -35,7 +35,7 @@ ARG COMMIT_SHA=""
 ARG BUILD_BRANCH=""
 ARG GO_BUILD_TAGS="oss"
 ARG WIRE_TAGS="oss"
-ARG BINGO="false"
+ARG BINGO="true"
 
 # Install build dependencies
 RUN if grep -i -q alpine /etc/issue; then \
@@ -47,7 +47,7 @@ WORKDIR /tmp/grafana
 COPY go.* ./
 COPY .bingo .bingo
 
-RUN go mod download -x
+RUN go mod download
 RUN if [[ "$BINGO" = "true" ]]; then \
       go install github.com/bwplotka/bingo@latest && \
       bingo get -v; \
