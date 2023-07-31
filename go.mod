@@ -257,6 +257,7 @@ require (
 	buf.build/gen/go/parca-dev/parca/protocolbuffers/go v1.28.1-20221222094228-8b1d3d0f62e6.4
 	github.com/Masterminds/semver/v3 v3.1.1
 	github.com/alicebob/miniredis/v2 v2.30.1
+	github.com/blang/semver/v4 v4.0.0
 	github.com/dave/dst v0.27.2
 	github.com/denisenkom/go-mssqldb v0.12.0
 	github.com/go-jose/go-jose/v3 v3.0.0

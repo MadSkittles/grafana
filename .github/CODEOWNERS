@@ -50,7 +50,7 @@
 /docs/sources/upgrade-guide/              @chri2547 @imatwawana
 /docs/sources/whatsnew/                   @chri2547 @imatwawana
 /docs/sources/developers/plugins/         @Eve832 @josmperez @grafana/plugins-platform-frontend @grafana/plugins-platform-backend
-/docs/sources/developers/plugins/backend/ @Eve832 @grafana/plugins-platform-backend
+/docs/sources/developers/plugins/introduction-to-plugin-development/backend/ @Eve832 @grafana/plugins-platform-backend
 
 # Backend code
 /go.mod @grafana/backend-platform
@@ -582,6 +582,7 @@ embed.go @grafana/grafana-as-code
 /.github/pr-commands.json @marefr
 /.github/renovate.json5 @grafana/frontend-ops
 /.github/teams.yml @armandgrillet
+/.github/workflows/auto-milestone.yml @grafana/grafana-delivery
 /.github/workflows/backport.yml @grafana/grafana-delivery
 /.github/workflows/bump-version.yml @grafana/grafana-delivery
 /.github/workflows/close-milestone.yml @grafana/grafana-delivery
@@ -604,6 +605,8 @@ embed.go @grafana/grafana-as-code
 /.github/workflows/pr-codeql-analysis-python.yml @DanCech
 /.github/workflows/pr-commands-closed.yml @tolzhabayev
 /.github/workflows/pr-commands.yml @marefr
+/.github/workflows/pr-patch-check.yml @grafana/grafana-delivery
+/.github/workflows/sync-mirror.yml @grafana/grafana-delivery
 /.github/workflows/publish-technical-documentation-next.yml @grafana/docs-grafana
 /.github/workflows/publish-technical-documentation-release.yml @grafana/docs-grafana
 /.github/workflows/remove-milestone.yml @grafana/grafana-frontend-platform

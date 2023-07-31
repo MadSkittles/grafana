@@ -3,7 +3,7 @@
 ARG BASE_IMAGE=alpine:3.17
 ARG JS_IMAGE=node:18-alpine3.17
 ARG JS_PLATFORM=linux/amd64
-ARG GO_IMAGE=golang:1.20.4-alpine3.17
+ARG GO_IMAGE=golang:1.20.6-alpine3.17
 
 ARG GO_SRC=go-builder
 ARG JS_SRC=js-builder
@@ -35,7 +35,7 @@ ARG COMMIT_SHA=""
 ARG BUILD_BRANCH=""
 ARG GO_BUILD_TAGS="oss"
 ARG WIRE_TAGS="oss"
-ARG BINGO="true"
+ARG BINGO="false"
 
 # Install build dependencies
 RUN if grep -i -q alpine /etc/issue; then \
