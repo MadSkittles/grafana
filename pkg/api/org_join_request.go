@@ -87,15 +87,16 @@ func (hs *HTTPServer) ApproveJoinRequest(c *contextmodel.ReqContext) response.Re
 		Updated: time.Now(),
 	}
 
-	_, err = hs.orgService.InsertOrgUser(c.Req.Context(), &orgUser)
+	_, insertUserErr := hs.orgService.InsertOrgUser(c.Req.Context(), &orgUser)
 
-	if err != nil {
-		return response.Error(500, "Failed to create user from join request", err)
-	}
 
 	_, err = hs.joinRequestService.Delete(c.Req.Context(), joinRequestId)
 	if err != nil {
 		return response.Error(500, "Failed to delete join request", err)
+	}
+
+	if insertUserErr != nil {
+		return response.Error(500, "User already exists in this org, join request deleted", err)
 	}
 
 	return response.Success("user added to the organization")

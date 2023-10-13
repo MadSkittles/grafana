@@ -48,7 +48,6 @@ const pageNav: NavModelItem = {
   icon: 'building',
   id: 'org-new',
   text: 'Organization Join Request',
-  breadcrumbs: [{ title: 'home', url: '/' }],
 };
 
 export const NewOrgPage = ({ match, location }: Props) => {

@@ -2,7 +2,7 @@ import { createEntityAdapter, createSlice } from '@reduxjs/toolkit';
 
 import { JoinRequester } from 'app/types';
 
-import { fetchJoinRequesters, rejectJoinRequest, approveJoinRequest, fetchActiveOrg } from './actions';
+import { fetchJoinRequesters, rejectJoinRequest, approveJoinRequest } from './actions';
 
 export type Status = 'idle' | 'loading' | 'succeeded' | 'failed';
 
