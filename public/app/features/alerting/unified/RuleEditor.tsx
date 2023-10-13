@@ -7,9 +7,11 @@ import { GrafanaRouteComponentProps } from 'app/core/navigation/types';
 import { useDispatch } from 'app/types';
 
 import { AlertWarning } from './AlertWarning';
+import { CloneRuleEditor } from './CloneRuleEditor';
 import { ExistingRuleEditor } from './ExistingRuleEditor';
 import { AlertingPageWrapper } from './components/AlertingPageWrapper';
 import { AlertRuleForm } from './components/rule-editor/AlertRuleForm';
+import { useURLSearchParams } from './hooks/useURLSearchParams';
 import { fetchRulesSourceBuildInfoAction } from './state/actions';
 import { useRulesAccess } from './utils/accessControlHooks';
 import * as ruleId from './utils/rule-id';
@@ -19,7 +21,6 @@ type RuleEditorProps = GrafanaRouteComponentProps<{ id?: string }>;
 const defaultPageNav: Partial<NavModelItem> = {
   icon: 'bell',
   id: 'alert-rule-view',
-  breadcrumbs: [{ title: 'Alert rules', url: 'alerting/list' }],
 };
 
 const getPageNav = (state: 'edit' | 'add') => {
@@ -33,8 +34,13 @@ const getPageNav = (state: 'edit' | 'add') => {
 
 const RuleEditor = ({ match }: RuleEditorProps) => {
   const dispatch = useDispatch();
+  const [searchParams] = useURLSearchParams();
+
   const { id } = match.params;
   const identifier = ruleId.tryParse(id, true);
+
+  const copyFromId = searchParams.get('copyFrom') ?? undefined;
+  const copyFromIdentifier = ruleId.tryParse(copyFromId);
 
   const { loading = true } = useAsync(async () => {
     if (identifier) {
@@ -58,11 +64,15 @@ const RuleEditor = ({ match }: RuleEditorProps) => {
     }
 
     if (identifier) {
-      return <ExistingRuleEditor key={id} identifier={identifier} />;
+      return <ExistingRuleEditor key={id} identifier={identifier} id={id} />;
     }
 
+    if (copyFromIdentifier) {
+      return <CloneRuleEditor sourceRuleId={copyFromIdentifier} />;
+    }
+    // new alert rule
     return <AlertRuleForm />;
-  }, [canCreateCloudRules, canCreateGrafanaRules, canEditRules, id, identifier, loading]);
+  }, [canCreateCloudRules, canCreateGrafanaRules, canEditRules, copyFromIdentifier, id, identifier, loading]);
 
   return (
     <AlertingPageWrapper isLoading={loading} pageId="alert-list" pageNav={getPageNav(identifier ? 'edit' : 'add')}>

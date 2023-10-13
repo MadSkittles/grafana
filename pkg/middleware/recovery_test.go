@@ -9,8 +9,8 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/grafana/grafana/pkg/infra/remotecache"
-	"github.com/grafana/grafana/pkg/models"
-	"github.com/grafana/grafana/pkg/services/auth"
+	"github.com/grafana/grafana/pkg/services/auth/authtest"
+	contextmodel "github.com/grafana/grafana/pkg/services/contexthandler/model"
 	"github.com/grafana/grafana/pkg/setting"
 	"github.com/grafana/grafana/pkg/web"
 )
@@ -24,7 +24,7 @@ func TestRecoveryMiddleware(t *testing.T) {
 			sc.req.Header.Set("content-type", "application/json")
 
 			assert.Equal(t, 500, sc.resp.Code)
-			assert.Equal(t, "Internal Server Error - Check the Grafana server logs for the detailed error message.", sc.respJson["message"])
+			assert.Equal(t, "Internal Server Error - test error", sc.respJson["message"])
 			assert.True(t, strings.HasPrefix(sc.respJson["error"].(string), "Server Error"))
 		})
 	})
@@ -42,7 +42,7 @@ func TestRecoveryMiddleware(t *testing.T) {
 	})
 }
 
-func panicHandler(c *models.ReqContext) {
+func panicHandler(c *contextmodel.ReqContext) {
 	panic("Handler has panicked")
 }
 
@@ -50,6 +50,7 @@ func recoveryScenario(t *testing.T, desc string, url string, fn scenarioFunc) {
 	t.Run(desc, func(t *testing.T) {
 		cfg := setting.NewCfg()
 		cfg.ErrTemplateName = "error-template"
+		cfg.UserFacingDefaultError = "test error"
 		sc := &scenarioContext{
 			t:   t,
 			url: url,
@@ -65,15 +66,15 @@ func recoveryScenario(t *testing.T, desc string, url string, fn scenarioFunc) {
 		sc.m.Use(AddDefaultResponseHeaders(cfg))
 		sc.m.UseMiddleware(web.Renderer(viewsPath, "[[", "]]"))
 
-		sc.userAuthTokenService = auth.NewFakeUserAuthTokenService()
+		sc.userAuthTokenService = authtest.NewFakeUserAuthTokenService()
 		sc.remoteCacheService = remotecache.NewFakeStore(t)
 
 		contextHandler := getContextHandler(t, nil, nil, nil, nil, nil, nil, nil)
 		sc.m.Use(contextHandler.Middleware)
 		// mock out gc goroutine
-		sc.m.Use(OrgRedirect(cfg, sc.userService))
+		sc.m.Use(OrgRedirect(cfg, sc.userService, sc.orgService))
 
-		sc.defaultHandler = func(c *models.ReqContext) {
+		sc.defaultHandler = func(c *contextmodel.ReqContext) {
 			sc.context = c
 			if sc.handlerFunc != nil {
 				sc.handlerFunc(sc.context)

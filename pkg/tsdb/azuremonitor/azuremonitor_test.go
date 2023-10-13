@@ -113,7 +113,7 @@ type fakeInstance struct {
 	settings types.AzureMonitorSettings
 }
 
-func (f *fakeInstance) Get(pluginContext backend.PluginContext) (instancemgmt.Instance, error) {
+func (f *fakeInstance) Get(_ context.Context, _ backend.PluginContext) (instancemgmt.Instance, error) {
 	return types.DatasourceInfo{
 		Cloud:    f.cloud,
 		Routes:   f.routes,
@@ -122,7 +122,7 @@ func (f *fakeInstance) Get(pluginContext backend.PluginContext) (instancemgmt.In
 	}, nil
 }
 
-func (f *fakeInstance) Do(pluginContext backend.PluginContext, fn instancemgmt.InstanceCallbackFunc) error {
+func (f *fakeInstance) Do(_ context.Context, _ backend.PluginContext, _ instancemgmt.InstanceCallbackFunc) error {
 	return nil
 }
 
@@ -165,6 +165,12 @@ func Test_newMux(t *testing.T) {
 			expectedURL: routes[azureMonitorPublic][azureLogAnalytics].URL,
 			Err:         require.NoError,
 		},
+		{
+			name:        "creates an Azure Traces executor",
+			queryType:   azureTraces,
+			expectedURL: routes[azureMonitorPublic][azureLogAnalytics].URL,
+			Err:         require.NoError,
+		},
 	}
 
 	for _, tt := range tests {
@@ -189,7 +195,12 @@ func Test_newMux(t *testing.T) {
 			}
 			mux := s.newQueryMux()
 			res, err := mux.QueryData(context.Background(), &backend.QueryDataRequest{
-				PluginContext: backend.PluginContext{},
+				PluginContext: backend.PluginContext{
+					DataSourceInstanceSettings: &backend.DataSourceInstanceSettings{
+						Name: "datasource_name",
+						UID:  "datasource_UID",
+					},
+				},
 				Queries: []backend.DataQuery{
 					{QueryType: tt.queryType},
 				},
@@ -265,7 +276,7 @@ func TestCheckHealth(t *testing.T) {
 				if !fail {
 					return &http.Response{
 						StatusCode: 200,
-						Body:       io.NopCloser(bytes.NewBufferString("OK")),
+						Body:       io.NopCloser(bytes.NewBufferString("{\"value\": [{\"subscriptionId\": \"abcd-1234\"}]}")),
 						Header:     make(http.Header),
 					}, nil
 				} else {

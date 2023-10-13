@@ -20,13 +20,18 @@ import (
 	"xorm.io/xorm"
 
 	"github.com/grafana/grafana/pkg/infra/log"
+	"github.com/grafana/grafana/pkg/setting"
 	"github.com/grafana/grafana/pkg/tsdb/intervalv2"
+	"github.com/grafana/grafana/pkg/util/errutil"
 )
+
+// XormDriverMu is used to allow safe concurrent registering and querying of drivers in xorm
+var XormDriverMu sync.RWMutex
 
 // MetaKeyExecutedQueryString is the key where the executed query should get stored
 const MetaKeyExecutedQueryString = "executedQueryString"
 
-var ErrConnectionFailed = errors.New("failed to connect to server - please inspect Grafana server log for details")
+var ErrConnectionFailed = errutil.NewBase(errutil.StatusInternal, "sqleng.connectionError")
 
 // SQLMacroEngine interpolates macros into sql. It takes in the Query to have access to query context and
 // timeRange to be able to generate queries that use from and to.
@@ -51,21 +56,24 @@ var NewXormEngine = func(driverName string, connectionString string) (*xorm.Engi
 }
 
 type JsonData struct {
-	MaxOpenConns        int    `json:"maxOpenConns"`
-	MaxIdleConns        int    `json:"maxIdleConns"`
-	ConnMaxLifetime     int    `json:"connMaxLifetime"`
-	ConnectionTimeout   int    `json:"connectionTimeout"`
-	Timescaledb         bool   `json:"timescaledb"`
-	Mode                string `json:"sslmode"`
-	ConfigurationMethod string `json:"tlsConfigurationMethod"`
-	TlsSkipVerify       bool   `json:"tlsSkipVerify"`
-	RootCertFile        string `json:"sslRootCertFile"`
-	CertFile            string `json:"sslCertFile"`
-	CertKeyFile         string `json:"sslKeyFile"`
-	Timezone            string `json:"timezone"`
-	Encrypt             string `json:"encrypt"`
-	Servername          string `json:"servername"`
-	TimeInterval        string `json:"timeInterval"`
+	MaxOpenConns            int    `json:"maxOpenConns"`
+	MaxIdleConns            int    `json:"maxIdleConns"`
+	ConnMaxLifetime         int    `json:"connMaxLifetime"`
+	ConnectionTimeout       int    `json:"connectionTimeout"`
+	Timescaledb             bool   `json:"timescaledb"`
+	Mode                    string `json:"sslmode"`
+	ConfigurationMethod     string `json:"tlsConfigurationMethod"`
+	TlsSkipVerify           bool   `json:"tlsSkipVerify"`
+	RootCertFile            string `json:"sslRootCertFile"`
+	CertFile                string `json:"sslCertFile"`
+	CertKeyFile             string `json:"sslKeyFile"`
+	Timezone                string `json:"timezone"`
+	Encrypt                 string `json:"encrypt"`
+	Servername              string `json:"servername"`
+	TimeInterval            string `json:"timeInterval"`
+	Database                string `json:"database"`
+	SecureDSProxy           bool   `json:"enableSecureSocksProxy"`
+	AllowCleartextPasswords bool   `json:"allowCleartextPasswords"`
 }
 
 type DataSourceInfo struct {
@@ -79,6 +87,13 @@ type DataSourceInfo struct {
 	DecryptedSecureJSONData map[string]string
 }
 
+// Defaults for the xorm connection pool
+type DefaultConnectionInfo struct {
+	MaxOpenConns    int
+	MaxIdleConns    int
+	ConnMaxLifetime int
+}
+
 type DataPluginConfiguration struct {
 	DriverName        string
 	DSInfo            DataSourceInfo
@@ -87,6 +102,7 @@ type DataPluginConfiguration struct {
 	MetricColumnTypes []string
 	RowLimit          int64
 }
+
 type DataSourceHandler struct {
 	macroEngine            SQLMacroEngine
 	queryResultTransformer SqlQueryResultTransformer
@@ -96,7 +112,9 @@ type DataSourceHandler struct {
 	log                    log.Logger
 	dsInfo                 DataSourceInfo
 	rowLimit               int64
+	userError              string
 }
+
 type QueryJson struct {
 	RawSql       string  `json:"rawSql"`
 	Fill         bool    `json:"fill"`
@@ -106,7 +124,7 @@ type QueryJson struct {
 	Format       string  `json:"format"`
 }
 
-func (e *DataSourceHandler) transformQueryError(logger log.Logger, err error) error {
+func (e *DataSourceHandler) TransformQueryError(logger log.Logger, err error) error {
 	// OpError is the error type usually returned by functions in the net
 	// package. It describes the operation, network type, and address of
 	// an error. We log this error rather than return it to the client
@@ -114,13 +132,13 @@ func (e *DataSourceHandler) transformQueryError(logger log.Logger, err error) er
 	var opErr *net.OpError
 	if errors.As(err, &opErr) {
 		logger.Error("Query error", "err", err)
-		return ErrConnectionFailed
+		return ErrConnectionFailed.Errorf("failed to connect to server - %s", e.userError)
 	}
 
 	return e.queryResultTransformer.TransformQueryError(logger, err)
 }
 
-func NewQueryDataHandler(config DataPluginConfiguration, queryResultTransformer SqlQueryResultTransformer,
+func NewQueryDataHandler(cfg *setting.Cfg, config DataPluginConfiguration, queryResultTransformer SqlQueryResultTransformer,
 	macroEngine SQLMacroEngine, log log.Logger) (*DataSourceHandler, error) {
 	log.Debug("Creating engine...")
 	defer func() {
@@ -134,6 +152,7 @@ func NewQueryDataHandler(config DataPluginConfiguration, queryResultTransformer 
 		log:                    log,
 		dsInfo:                 config.DSInfo,
 		rowLimit:               config.RowLimit,
+		userError:              cfg.UserFacingDefaultError,
 	}
 
 	if len(config.TimeColumnNames) > 0 {
@@ -170,6 +189,10 @@ func (e *DataSourceHandler) Dispose() {
 		}
 	}
 	e.log.Debug("Engine disposed")
+}
+
+func (e *DataSourceHandler) Ping() error {
+	return e.engine.Ping()
 }
 
 func (e *DataSourceHandler) QueryData(ctx context.Context, req *backend.QueryDataRequest) (*backend.QueryDataResponse, error) {
@@ -224,7 +247,7 @@ func (e *DataSourceHandler) executeQuery(query backend.DataQuery, wg *sync.WaitG
 			} else if theErrString, ok := r.(string); ok {
 				queryResult.dataResponse.Error = fmt.Errorf(theErrString)
 			} else {
-				queryResult.dataResponse.Error = fmt.Errorf("unexpected error, see the server log for details")
+				queryResult.dataResponse.Error = fmt.Errorf("unexpected error - %s", e.userError)
 			}
 			ch <- queryResult
 		}
@@ -249,14 +272,14 @@ func (e *DataSourceHandler) executeQuery(query backend.DataQuery, wg *sync.WaitG
 	// global substitutions
 	interpolatedQuery, err := Interpolate(query, timeRange, e.dsInfo.JsonData.TimeInterval, queryJson.RawSql)
 	if err != nil {
-		errAppendDebug("interpolation failed", e.transformQueryError(logger, err), interpolatedQuery)
+		errAppendDebug("interpolation failed", e.TransformQueryError(logger, err), interpolatedQuery)
 		return
 	}
 
 	// data source specific substitutions
 	interpolatedQuery, err = e.macroEngine.Interpolate(&query, timeRange, interpolatedQuery)
 	if err != nil {
-		errAppendDebug("interpolation failed", e.transformQueryError(logger, err), interpolatedQuery)
+		errAppendDebug("interpolation failed", e.TransformQueryError(logger, err), interpolatedQuery)
 		return
 	}
 
@@ -266,7 +289,7 @@ func (e *DataSourceHandler) executeQuery(query backend.DataQuery, wg *sync.WaitG
 
 	rows, err := db.QueryContext(queryContext, interpolatedQuery)
 	if err != nil {
-		errAppendDebug("db query error", e.transformQueryError(logger, err), interpolatedQuery)
+		errAppendDebug("db query error", e.TransformQueryError(logger, err), interpolatedQuery)
 		return
 	}
 	defer func() {
@@ -295,8 +318,12 @@ func (e *DataSourceHandler) executeQuery(query backend.DataQuery, wg *sync.WaitG
 
 	frame.Meta.ExecutedQueryString = interpolatedQuery
 
-	// If no rows were returned, no point checking anything else.
+	// If no rows were returned, clear any previously set `Fields` with a single empty `data.Field` slice.
+	// Then assign `queryResult.dataResponse.Frames` the current single frame with that single empty Field.
+	// This assures 1) our visualization doesn't display unwanted empty fields, and also that 2)
+	// additionally-needed frame data stays intact and is correctly passed to our visulization.
 	if frame.Rows() == 0 {
+		frame.Fields = []*data.Field{}
 		queryResult.dataResponse.Frames = data.Frames{frame}
 		ch <- queryResult
 		return
@@ -998,7 +1025,7 @@ func (m *SQLMacroEngineBase) ReplaceAllStringSubmatchFunc(re *regexp.Regexp, str
 	result := ""
 	lastIndex := 0
 
-	for _, v := range re.FindAllSubmatchIndex([]byte(str), -1) {
+	for _, v := range re.FindAllStringSubmatchIndex(str, -1) {
 		groups := []string{}
 		for i := 0; i < len(v); i += 2 {
 			groups = append(groups, str[v[i]:v[i+1]])

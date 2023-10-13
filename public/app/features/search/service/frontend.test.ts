@@ -25,8 +25,8 @@ describe('FrontendSearcher', () => {
     };
     const results = await frontendSearcher.search(query);
 
-    expect(results.view.fields.name.values.toArray()).toMatchInlineSnapshot(`
-      Array [
+    expect(results.view.fields.name.values).toMatchInlineSnapshot(`
+      [
         "foo cat",
         "bar dog",
         "cow baz",
@@ -43,8 +43,8 @@ describe('FrontendSearcher', () => {
     };
     const results = await frontendSearcher.search(query);
 
-    expect(results.view.fields.name.values.toArray()).toMatchInlineSnapshot(`
-      Array [
+    expect(results.view.fields.name.values).toMatchInlineSnapshot(`
+      [
         "bar dog",
         "cow baz",
       ]
@@ -60,8 +60,8 @@ describe('FrontendSearcher', () => {
     };
     const results = await frontendSearcher.search(query);
 
-    expect(results.view.fields.name.values.toArray()).toMatchInlineSnapshot(`
-      Array [
+    expect(results.view.fields.name.values).toMatchInlineSnapshot(`
+      [
         "bar dog",
       ]
     `);

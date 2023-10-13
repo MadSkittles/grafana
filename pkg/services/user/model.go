@@ -27,6 +27,8 @@ var (
 	ErrLastGrafanaAdmin  = errors.New("cannot remove last grafana admin")
 	ErrProtectedUser     = errors.New("cannot adopt protected user")
 	ErrNoUniqueID        = errors.New("identifying id not found")
+	ErrLastSeenUpToDate  = errors.New("last seen is already up to date")
+	ErrUpdateInvalidID   = errors.New("unable to update invalid id")
 )
 
 type User struct {
@@ -95,6 +97,7 @@ type ChangeUserPasswordCommand struct {
 
 type UpdateUserLastSeenAtCommand struct {
 	UserID int64
+	OrgID  int64
 }
 
 type SetUsingOrgCommand struct {
@@ -140,20 +143,22 @@ type GetUserProfileQuery struct {
 }
 
 type UserProfileDTO struct {
-	ID             int64           `json:"id"`
-	Email          string          `json:"email"`
-	Name           string          `json:"name"`
-	Login          string          `json:"login"`
-	Theme          string          `json:"theme"`
-	OrgID          int64           `json:"orgId,omitempty"`
-	IsGrafanaAdmin bool            `json:"isGrafanaAdmin"`
-	IsDisabled     bool            `json:"isDisabled"`
-	IsExternal     bool            `json:"isExternal"`
-	AuthLabels     []string        `json:"authLabels"`
-	UpdatedAt      time.Time       `json:"updatedAt"`
-	CreatedAt      time.Time       `json:"createdAt"`
-	AvatarUrl      string          `json:"avatarUrl"`
-	AccessControl  map[string]bool `json:"accessControl,omitempty"`
+	ID                             int64           `json:"id"`
+	Email                          string          `json:"email"`
+	Name                           string          `json:"name"`
+	Login                          string          `json:"login"`
+	Theme                          string          `json:"theme"`
+	OrgID                          int64           `json:"orgId,omitempty"`
+	IsGrafanaAdmin                 bool            `json:"isGrafanaAdmin"`
+	IsDisabled                     bool            `json:"isDisabled"`
+	IsExternal                     bool            `json:"isExternal"`
+	IsExternallySynced             bool            `json:"isExternallySynced"`
+	IsGrafanaAdminExternallySynced bool            `json:"isGrafanaAdminExternallySynced"`
+	AuthLabels                     []string        `json:"authLabels"`
+	UpdatedAt                      time.Time       `json:"updatedAt"`
+	CreatedAt                      time.Time       `json:"createdAt"`
+	AvatarURL                      string          `json:"avatarUrl"`
+	AccessControl                  map[string]bool `json:"accessControl,omitempty"`
 }
 
 // implement Conversion interface to define custom field mapping (xorm feature)
@@ -192,25 +197,29 @@ type GetSignedInUserQuery struct {
 	OrgID  int64 `xorm:"org_id"`
 }
 
+type AnalyticsSettings struct {
+	Identifier         string
+	IntercomIdentifier string
+}
+
 type SignedInUser struct {
-	UserID             int64 `xorm:"user_id"`
-	OrgID              int64 `xorm:"org_id"`
-	OrgName            string
-	OrgRole            roletype.RoleType
-	ExternalAuthModule string
-	ExternalAuthID     string `xorm:"external_auth_id"`
-	Login              string
-	Name               string
-	Email              string
-	ApiKeyID           int64 `xorm:"api_key_id"`
-	IsServiceAccount   bool  `xorm:"is_service_account"`
-	OrgCount           int
-	IsGrafanaAdmin     bool
-	IsAnonymous        bool
-	IsDisabled         bool
-	HelpFlags1         HelpFlags1
-	LastSeenAt         time.Time
-	Teams              []int64
+	UserID           int64 `xorm:"user_id"`
+	OrgID            int64 `xorm:"org_id"`
+	OrgName          string
+	OrgRole          roletype.RoleType
+	Login            string
+	Name             string
+	Email            string
+	AuthenticatedBy  string
+	ApiKeyID         int64 `xorm:"api_key_id"`
+	IsServiceAccount bool  `xorm:"is_service_account"`
+	OrgCount         int
+	IsGrafanaAdmin   bool
+	IsAnonymous      bool
+	IsDisabled       bool
+	HelpFlags1       HelpFlags1
+	LastSeenAt       time.Time
+	Teams            []int64
 	// Permissions grouped by orgID and actions
 	Permissions map[int64]map[string][]string `json:"-"`
 }
@@ -241,7 +250,16 @@ type UserDisplayDTO struct {
 	ID        int64  `json:"id,omitempty"`
 	Name      string `json:"name,omitempty"`
 	Login     string `json:"login,omitempty"`
-	AvatarUrl string `json:"avatarUrl"`
+	AvatarURL string `json:"avatarUrl"`
+}
+
+type UserJoinRequester struct {
+	ID       int64     `xorm:"pk autoincr 'id'" json:"id"`
+	OrgID    int64     `xorm:"org_id" json:"orgId"`
+	Email    string    `json:"email"`
+	Role     string    `json:"role"`
+	Created  time.Time `json:"created"`
+	Updated  time.Time `json:"updated,omitempty"`
 }
 
 // ------------------------
@@ -362,3 +380,14 @@ const (
 	QuotaTargetSrv string = "user"
 	QuotaTarget    string = "user"
 )
+
+type AdminCreateUserResponse struct {
+	ID      int64  `json:"id"`
+	Message string `json:"message"`
+}
+
+type Password string
+
+func (p Password) IsWeak() bool {
+	return len(p) <= 4
+}

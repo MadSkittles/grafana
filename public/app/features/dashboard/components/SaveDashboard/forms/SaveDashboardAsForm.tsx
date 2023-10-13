@@ -9,7 +9,7 @@ import { SaveDashboardFormProps } from '../types';
 
 interface SaveDashboardAsFormDTO {
   title: string;
-  $folder: { id?: number; title?: string };
+  $folder: { uid?: string; title?: string };
   copyTags: boolean;
 }
 
@@ -31,7 +31,6 @@ const getSaveAsDashboardClone = (dashboard: DashboardModel) => {
     });
   }
 
-  delete clone.autoUpdate;
   return clone;
 };
 
@@ -39,17 +38,18 @@ export interface SaveDashboardAsFormProps extends SaveDashboardFormProps {
   isNew?: boolean;
 }
 
-export const SaveDashboardAsForm: React.FC<SaveDashboardAsFormProps> = ({
+export const SaveDashboardAsForm = ({
   dashboard,
+  isLoading,
   isNew,
   onSubmit,
   onCancel,
   onSuccess,
-}) => {
+}: SaveDashboardAsFormProps) => {
   const defaultValues: SaveDashboardAsFormDTO = {
     title: isNew ? dashboard.title : `${dashboard.title} Copy`,
     $folder: {
-      id: dashboard.meta.folderId,
+      uid: dashboard.meta.folderUid,
       title: dashboard.meta.folderTitle,
     },
     copyTags: false,
@@ -59,8 +59,9 @@ export const SaveDashboardAsForm: React.FC<SaveDashboardAsFormProps> = ({
     if (dashboardName && dashboardName === getFormValues().$folder.title?.trim()) {
       return 'Dashboard name cannot be the same as folder name';
     }
+
     try {
-      await validationSrv.validateNewDashboardName(getFormValues().$folder.id, dashboardName);
+      await validationSrv.validateNewDashboardName(getFormValues().$folder.uid ?? 'general', dashboardName);
       return true;
     } catch (e) {
       return e instanceof Error ? e.message : 'Dashboard name is invalid';
@@ -77,14 +78,14 @@ export const SaveDashboardAsForm: React.FC<SaveDashboardAsFormProps> = ({
 
         const clone = getSaveAsDashboardClone(dashboard);
         clone.title = data.title;
-        if (!data.copyTags) {
+        if (!isNew && !data.copyTags) {
           clone.tags = [];
         }
 
         const result = await onSubmit(
           clone,
           {
-            folderId: data.$folder.id,
+            folderUid: data.$folder.uid,
           },
           dashboard
         );
@@ -110,9 +111,11 @@ export const SaveDashboardAsForm: React.FC<SaveDashboardAsFormProps> = ({
               render={({ field: { ref, ...field } }) => (
                 <FolderPicker
                   {...field}
-                  dashboardId={dashboard.id}
-                  initialFolderId={dashboard.meta.folderId}
+                  onChange={(uid: string, title: string) => field.onChange({ uid, title })}
+                  value={field.value?.uid}
+                  // Old folder picker fields
                   initialTitle={dashboard.meta.folderTitle}
+                  dashboardId={dashboard.id}
                   enableCreateNew
                 />
               )}
@@ -129,8 +132,8 @@ export const SaveDashboardAsForm: React.FC<SaveDashboardAsFormProps> = ({
             <Button type="button" variant="secondary" onClick={onCancel} fill="outline">
               Cancel
             </Button>
-            <Button type="submit" aria-label="Save dashboard button">
-              Save
+            <Button disabled={isLoading} type="submit" aria-label="Save dashboard button">
+              {isLoading ? 'Saving...' : 'Save'}
             </Button>
           </HorizontalGroup>
         </>

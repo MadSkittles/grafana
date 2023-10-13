@@ -1,67 +1,20 @@
-import React, { PureComponent } from 'react';
-import { connect } from 'react-redux';
+import React from 'react';
+import { connect, ConnectedProps } from 'react-redux';
 
-import { RadioButtonGroup, LinkButton, FilterInput } from '@grafana/ui';
+import { RadioButtonGroup, LinkButton, FilterInput, InlineField } from '@grafana/ui';
+import config from 'app/core/config';
 import { contextSrv } from 'app/core/core';
 import { AccessControlAction, StoreState } from 'app/types';
 
 import { selectTotal } from '../invites/state/selectors';
+import { selectTotalRequests } from '../joinRequests/state/selectors';
 
-import { setUsersSearchQuery } from './state/reducers';
+import { changeSearchQuery } from './state/actions';
 import { getUsersSearchQuery } from './state/selectors';
 
-export interface Props {
-  searchQuery: string;
-  setUsersSearchQuery: typeof setUsersSearchQuery;
-  onShowInvites: () => void;
-  pendingInvitesCount: number;
-  canInvite: boolean;
-  showInvites: boolean;
-  externalUserMngLinkUrl: string;
-  externalUserMngLinkName: string;
-}
-
-export class UsersActionBar extends PureComponent<Props> {
-  render() {
-    const {
-      canInvite,
-      externalUserMngLinkName,
-      externalUserMngLinkUrl,
-      searchQuery,
-      pendingInvitesCount,
-      setUsersSearchQuery,
-      onShowInvites,
-      showInvites,
-    } = this.props;
-    const options = [
-      { label: 'Users', value: 'users' },
-      { label: `Pending Invites (${pendingInvitesCount})`, value: 'invites' },
-    ];
-    const canAddToOrg: boolean = contextSrv.hasAccess(AccessControlAction.OrgUsersAdd, canInvite);
-
-    return (
-      <div className="page-action-bar" data-testid="users-action-bar">
-        <div className="gf-form gf-form--grow">
-          <FilterInput
-            value={searchQuery}
-            onChange={setUsersSearchQuery}
-            placeholder="Search user by login, email or name"
-          />
-        </div>
-        {pendingInvitesCount > 0 && (
-          <div style={{ marginLeft: '1rem' }}>
-            <RadioButtonGroup value={showInvites ? 'invites' : 'users'} options={options} onChange={onShowInvites} />
-          </div>
-        )}
-        {canAddToOrg && <LinkButton href="org/users/invite">Invite</LinkButton>}
-        {externalUserMngLinkUrl && (
-          <LinkButton href={externalUserMngLinkUrl} target="_blank" rel="noopener">
-            {externalUserMngLinkName}
-          </LinkButton>
-        )}
-      </div>
-    );
-  }
+export interface OwnProps {
+  showUserTypes: string;
+  onShowUserTypes: (value: string) => void;
 }
 
 function mapStateToProps(state: StoreState) {
@@ -71,11 +24,62 @@ function mapStateToProps(state: StoreState) {
     externalUserMngLinkName: state.users.externalUserMngLinkName,
     externalUserMngLinkUrl: state.users.externalUserMngLinkUrl,
     canInvite: state.users.canInvite,
+    joinRequestersCount: selectTotalRequests(state.joinRequests)
   };
 }
 
 const mapDispatchToProps = {
-  setUsersSearchQuery,
+  changeSearchQuery,
 };
 
-export default connect(mapStateToProps, mapDispatchToProps)(UsersActionBar);
+const connector = connect(mapStateToProps, mapDispatchToProps);
+
+export type Props = ConnectedProps<typeof connector> & OwnProps;
+
+export const UsersActionBarUnconnected = ({
+  canInvite,
+  externalUserMngLinkName,
+  externalUserMngLinkUrl,
+  searchQuery,
+  pendingInvitesCount,
+  changeSearchQuery,
+  onShowUserTypes,
+  showUserTypes,
+  joinRequestersCount
+}: Props): JSX.Element => {
+  const options = [
+    { label: 'Users', value: 'users' },
+    { label: `Pending Invites (${pendingInvitesCount})`, value: 'invites' },
+    { label: `Join Requests (${joinRequestersCount})`, value: 'joinRequests' }
+  ];
+  const canAddToOrg: boolean = contextSrv.hasAccess(AccessControlAction.OrgUsersAdd, canInvite);
+  // Show invite button in the following cases:
+  // 1) the instance is not a hosted Grafana instance (!config.externalUserMngInfo)
+  // 2) new basic auth users can be created for this instance (!config.disableLoginForm).
+  const showInviteButton: boolean = canAddToOrg && !(config.disableLoginForm && config.externalUserMngInfo);
+
+  return (
+    <div className="page-action-bar" data-testid="users-action-bar">
+      <InlineField grow>
+        <FilterInput
+          value={searchQuery}
+          onChange={changeSearchQuery}
+          placeholder="Search user by login, email or name"
+        />
+      </InlineField>
+      {(
+        <div style={{ marginLeft: '1rem' }}>
+          <RadioButtonGroup value={showUserTypes} options={options} onChange={onShowUserTypes} />
+        </div>
+      )}
+      {showInviteButton && <LinkButton href="org/users/invite">Invite</LinkButton>}
+      {externalUserMngLinkUrl && (
+        <LinkButton href={externalUserMngLinkUrl} target="_blank" rel="noopener">
+          {externalUserMngLinkName}
+        </LinkButton>
+      )}
+    </div>
+  );
+};
+
+export const UsersActionBar = connector(UsersActionBarUnconnected);

@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"net/textproto"
 	"regexp"
 	"strings"
 	"sync"
@@ -20,6 +19,7 @@ import (
 	"github.com/grafana/grafana/pkg/infra/log"
 	"github.com/grafana/grafana/pkg/infra/tracing"
 	"github.com/grafana/grafana/pkg/services/featuremgmt"
+	"github.com/grafana/grafana/pkg/tsdb/loki/kinds/dataquery"
 )
 
 var logger = log.New("tsdb.loki")
@@ -58,15 +58,14 @@ type datasourceInfo struct {
 }
 
 type QueryJSONModel struct {
-	QueryType    string `json:"queryType"`
-	Expr         string `json:"expr"`
-	Direction    string `json:"direction"`
-	LegendFormat string `json:"legendFormat"`
-	Interval     string `json:"interval"`
-	IntervalMS   int    `json:"intervalMS"`
-	Resolution   int64  `json:"resolution"`
-	MaxLines     int    `json:"maxLines"`
-	VolumeQuery  bool   `json:"volumeQuery"`
+	dataquery.LokiDataQuery
+	Direction           *string `json:"direction,omitempty"`
+	SupportingQueryType *string `json:"supportingQueryType"`
+}
+
+type ResponseOpts struct {
+	metricDataplane bool
+	logsDataplane   bool
 }
 
 func parseQueryModel(raw json.RawMessage) (*QueryJSONModel, error) {
@@ -96,55 +95,15 @@ func newInstanceSettings(httpClientProvider httpclient.Provider) datasource.Inst
 	}
 }
 
-// in the CallResource API, request-headers are in a map where the value is an array-of-strings,
-// so we need a helper function that can extract a single string-value from an array-of-strings.
-// i only deal with two cases:
-// - zero-length array
-// - first-item of the array
-// i do not handle the case where there are multiple items in the array, i do not know
-// if that can even happen ever, for the headers that we are interested in.
-func arrayHeaderFirstValue(values []string) string {
-	if len(values) == 0 {
-		return ""
-	}
-
-	// NOTE: we assume there never is a second item in the http-header-values-array
-	return values[0]
-}
-
 func (s *Service) CallResource(ctx context.Context, req *backend.CallResourceRequest, sender backend.CallResourceResponseSender) error {
-	dsInfo, err := s.getDSInfo(req.PluginContext)
+	dsInfo, err := s.getDSInfo(ctx, req.PluginContext)
 	if err != nil {
 		return err
 	}
-	return callResource(ctx, req, sender, dsInfo, logger.FromContext(ctx))
+	return callResource(ctx, req, sender, dsInfo, logger.FromContext(ctx), s.tracer)
 }
 
-func getHeadersForCallResource(headers map[string][]string) map[string]string {
-	data := make(map[string]string)
-
-	for k, values := range headers {
-		k = textproto.CanonicalMIMEHeaderKey(k)
-		firstValue := arrayHeaderFirstValue(values)
-
-		if firstValue == "" {
-			continue
-		}
-		switch k {
-		case "Authorization":
-			data["Authorization"] = firstValue
-		case "X-Id-Token":
-			data["X-ID-Token"] = firstValue
-		case "Cookie":
-			data["Cookie"] = firstValue
-		case "Accept-Encoding":
-			data["Accept-Encoding"] = firstValue
-		}
-	}
-	return data
-}
-
-func callResource(ctx context.Context, req *backend.CallResourceRequest, sender backend.CallResourceResponseSender, dsInfo *datasourceInfo, plog log.Logger) error {
+func callResource(ctx context.Context, req *backend.CallResourceRequest, sender backend.CallResourceResponseSender, dsInfo *datasourceInfo, plog log.Logger, tracer tracing.Tracer) error {
 	url := req.URL
 
 	// a very basic is-this-url-valid check
@@ -153,13 +112,18 @@ func callResource(ctx context.Context, req *backend.CallResourceRequest, sender 
 	}
 	if (!strings.HasPrefix(url, "labels?")) &&
 		(!strings.HasPrefix(url, "label/")) && // the `/label/$label_name/values` form
-		(!strings.HasPrefix(url, "series?")) {
+		(!strings.HasPrefix(url, "series?")) &&
+		(!strings.HasPrefix(url, "index/stats?")) {
 		return fmt.Errorf("invalid resource URL: %s", url)
 	}
 	lokiURL := fmt.Sprintf("/loki/api/v1/%s", url)
 
-	api := newLokiAPI(dsInfo.HTTPClient, dsInfo.URL, plog, getHeadersForCallResource(req.Headers))
-	encodedBytes, err := api.RawQuery(ctx, lokiURL)
+	ctx, span := tracer.Start(ctx, "datasource.loki.CallResource")
+	span.SetAttributes("url", lokiURL, attribute.Key("url").String(lokiURL))
+	defer span.End()
+
+	api := newLokiAPI(dsInfo.HTTPClient, dsInfo.URL, plog)
+	rawLokiResponse, err := api.RawQuery(ctx, lokiURL)
 
 	if err != nil {
 		return err
@@ -168,30 +132,35 @@ func callResource(ctx context.Context, req *backend.CallResourceRequest, sender 
 	respHeaders := map[string][]string{
 		"content-type": {"application/json"},
 	}
-	if encodedBytes.Encoding != "" {
-		respHeaders["content-encoding"] = []string{encodedBytes.Encoding}
+	if rawLokiResponse.Encoding != "" {
+		respHeaders["content-encoding"] = []string{rawLokiResponse.Encoding}
 	}
 	return sender.Send(&backend.CallResourceResponse{
-		Status:  http.StatusOK,
+		Status:  rawLokiResponse.Status,
 		Headers: respHeaders,
-		Body:    encodedBytes.Body,
+		Body:    rawLokiResponse.Body,
 	})
 }
 
 func (s *Service) QueryData(ctx context.Context, req *backend.QueryDataRequest) (*backend.QueryDataResponse, error) {
-	dsInfo, err := s.getDSInfo(req.PluginContext)
+	dsInfo, err := s.getDSInfo(ctx, req.PluginContext)
 	if err != nil {
 		result := backend.NewQueryDataResponse()
 		return result, err
 	}
 
-	return queryData(ctx, req, dsInfo, s.tracer)
+	responseOpts := ResponseOpts{
+		metricDataplane: s.features.IsEnabled(featuremgmt.FlagLokiMetricDataplane),
+		logsDataplane:   s.features.IsEnabled(featuremgmt.FlagLokiLogsDataplane),
+	}
+
+	return queryData(ctx, req, dsInfo, responseOpts, s.tracer)
 }
 
-func queryData(ctx context.Context, req *backend.QueryDataRequest, dsInfo *datasourceInfo, tracer tracing.Tracer) (*backend.QueryDataResponse, error) {
+func queryData(ctx context.Context, req *backend.QueryDataRequest, dsInfo *datasourceInfo, responseOpts ResponseOpts, tracer tracing.Tracer) (*backend.QueryDataResponse, error) {
 	result := backend.NewQueryDataResponse()
 
-	api := newLokiAPI(dsInfo.HTTPClient, dsInfo.URL, logger.FromContext(ctx), req.Headers)
+	api := newLokiAPI(dsInfo.HTTPClient, dsInfo.URL, logger.FromContext(ctx))
 
 	queries, err := parseQuery(req)
 	if err != nil {
@@ -204,10 +173,14 @@ func queryData(ctx context.Context, req *backend.QueryDataRequest, dsInfo *datas
 		span.SetAttributes("start_unixnano", query.Start, attribute.Key("start_unixnano").Int64(query.Start.UnixNano()))
 		span.SetAttributes("stop_unixnano", query.End, attribute.Key("stop_unixnano").Int64(query.End.UnixNano()))
 
+		if req.GetHTTPHeader("X-Query-Group-Id") != "" {
+			span.SetAttributes("query_group_id", req.GetHTTPHeader("X-Query-Group-Id"), attribute.Key("query_group_id").String(req.GetHTTPHeader("X-Query-Group-Id")))
+		}
+
 		logger := logger.FromContext(ctx) // get logger with trace-id and other contextual info
 		logger.Debug("Sending query", "start", query.Start, "end", query.End, "step", query.Step, "query", query.Expr)
 
-		frames, err := runQuery(ctx, api, query)
+		frames, err := runQuery(ctx, api, query, responseOpts)
 
 		span.End()
 		queryRes := backend.DataResponse{}
@@ -224,14 +197,14 @@ func queryData(ctx context.Context, req *backend.QueryDataRequest, dsInfo *datas
 }
 
 // we extracted this part of the functionality to make it easy to unit-test it
-func runQuery(ctx context.Context, api *LokiAPI, query *lokiQuery) (data.Frames, error) {
-	frames, err := api.DataQuery(ctx, *query)
+func runQuery(ctx context.Context, api *LokiAPI, query *lokiQuery, responseOpts ResponseOpts) (data.Frames, error) {
+	frames, err := api.DataQuery(ctx, *query, responseOpts)
 	if err != nil {
 		return data.Frames{}, err
 	}
 
 	for _, frame := range frames {
-		if err = adjustFrame(frame, query); err != nil {
+		if err = adjustFrame(frame, query, !responseOpts.metricDataplane, responseOpts.logsDataplane); err != nil {
 			return data.Frames{}, err
 		}
 		if err != nil {
@@ -242,8 +215,8 @@ func runQuery(ctx context.Context, api *LokiAPI, query *lokiQuery) (data.Frames,
 	return frames, nil
 }
 
-func (s *Service) getDSInfo(pluginCtx backend.PluginContext) (*datasourceInfo, error) {
-	i, err := s.im.Get(pluginCtx)
+func (s *Service) getDSInfo(ctx context.Context, pluginCtx backend.PluginContext) (*datasourceInfo, error) {
+	i, err := s.im.Get(ctx, pluginCtx)
 	if err != nil {
 		return nil, err
 	}

@@ -7,7 +7,19 @@
 export enum DataFrameType {
   TimeSeriesWide = 'timeseries-wide',
   TimeSeriesLong = 'timeseries-long',
+
+  /** @deprecated in favor of TimeSeriesMulti */
   TimeSeriesMany = 'timeseries-many',
+
+  TimeSeriesMulti = 'timeseries-multi',
+
+  /** Numeric types: https://grafana.com/developers/dataplane/numeric */
+  NumericWide = 'numeric-wide',
+  NumericMulti = 'numeric-multi',
+  NumericLong = 'numeric-long',
+
+  /** Logs types: https://grafana.com/developers/dataplane/logs */
+  LogLines = 'log-lines',
 
   /** Directory listing */
   DirectoryListing = 'directory-listing',

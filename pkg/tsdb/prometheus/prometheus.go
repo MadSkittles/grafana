@@ -10,17 +10,18 @@ import (
 	"github.com/grafana/grafana-plugin-sdk-go/backend"
 	"github.com/grafana/grafana-plugin-sdk-go/backend/datasource"
 	"github.com/grafana/grafana-plugin-sdk-go/backend/instancemgmt"
+	"github.com/patrickmn/go-cache"
+	apiv1 "github.com/prometheus/client_golang/api/prometheus/v1"
+
 	"github.com/grafana/grafana/pkg/infra/httpclient"
 	"github.com/grafana/grafana/pkg/infra/log"
 	"github.com/grafana/grafana/pkg/infra/tracing"
 	"github.com/grafana/grafana/pkg/services/featuremgmt"
 	"github.com/grafana/grafana/pkg/setting"
-	"github.com/grafana/grafana/pkg/tsdb/prometheus/buffered"
 	"github.com/grafana/grafana/pkg/tsdb/prometheus/client"
+	"github.com/grafana/grafana/pkg/tsdb/prometheus/instrumentation"
 	"github.com/grafana/grafana/pkg/tsdb/prometheus/querydata"
 	"github.com/grafana/grafana/pkg/tsdb/prometheus/resource"
-	"github.com/patrickmn/go-cache"
-	apiv1 "github.com/prometheus/client_golang/api/prometheus/v1"
 )
 
 var plog = log.New("tsdb.prometheus")
@@ -31,7 +32,6 @@ type Service struct {
 }
 
 type instance struct {
-	buffered     *buffered.Buffered
 	queryData    *querydata.QueryData
 	resource     *resource.Resource
 	versionCache *cache.Cache
@@ -47,7 +47,7 @@ func ProvideService(httpClientProvider httpclient.Provider, cfg *setting.Cfg, fe
 
 func newInstanceSettings(httpClientProvider httpclient.Provider, cfg *setting.Cfg, features featuremgmt.FeatureToggles, tracer tracing.Tracer) datasource.InstanceFactoryFunc {
 	return func(settings backend.DataSourceInstanceSettings) (instancemgmt.Instance, error) {
-		// Creates a http roundTripper. Probably should be used for both buffered and streaming/querydata instances.
+		// Creates a http roundTripper.
 		opts, err := client.CreateTransportOptions(settings, cfg, plog)
 		if err != nil {
 			return nil, fmt.Errorf("error creating transport options: %v", err)
@@ -55,11 +55,6 @@ func newInstanceSettings(httpClientProvider httpclient.Provider, cfg *setting.Cf
 		httpClient, err := httpClientProvider.New(*opts)
 		if err != nil {
 			return nil, fmt.Errorf("error creating http client: %v", err)
-		}
-		// Older version using standard Go Prometheus client
-		b, err := buffered.New(httpClient.Transport, tracer, settings, plog)
-		if err != nil {
-			return nil, err
 		}
 
 		// New version using custom client and better response parsing
@@ -75,7 +70,6 @@ func newInstanceSettings(httpClientProvider httpclient.Provider, cfg *setting.Cf
 		}
 
 		return instance{
-			buffered:     b,
 			queryData:    qd,
 			resource:     r,
 			versionCache: cache.New(time.Minute*1, time.Minute*5),
@@ -85,23 +79,25 @@ func newInstanceSettings(httpClientProvider httpclient.Provider, cfg *setting.Cf
 
 func (s *Service) QueryData(ctx context.Context, req *backend.QueryDataRequest) (*backend.QueryDataResponse, error) {
 	if len(req.Queries) == 0 {
-		return &backend.QueryDataResponse{}, fmt.Errorf("query contains no queries")
+		err := fmt.Errorf("query contains no queries")
+		instrumentation.UpdateQueryDataMetrics(err, nil)
+		return &backend.QueryDataResponse{}, err
 	}
 
-	i, err := s.getInstance(req.PluginContext)
+	i, err := s.getInstance(ctx, req.PluginContext)
 	if err != nil {
+		instrumentation.UpdateQueryDataMetrics(err, nil)
 		return nil, err
 	}
 
-	if s.features.IsEnabled(featuremgmt.FlagPrometheusBufferedClient) {
-		return i.buffered.ExecuteTimeSeriesQuery(ctx, req)
-	}
+	qd, err := i.queryData.Execute(ctx, req)
+	instrumentation.UpdateQueryDataMetrics(err, qd)
 
-	return i.queryData.Execute(ctx, req)
+	return qd, err
 }
 
 func (s *Service) CallResource(ctx context.Context, req *backend.CallResourceRequest, sender backend.CallResourceResponseSender) error {
-	i, err := s.getInstance(req.PluginContext)
+	i, err := s.getInstance(ctx, req.PluginContext)
 	if err != nil {
 		return err
 	}
@@ -128,8 +124,8 @@ func (s *Service) CallResource(ctx context.Context, req *backend.CallResourceReq
 	return sender.Send(resp)
 }
 
-func (s *Service) getInstance(pluginCtx backend.PluginContext) (*instance, error) {
-	i, err := s.im.Get(pluginCtx)
+func (s *Service) getInstance(ctx context.Context, pluginCtx backend.PluginContext) (*instance, error) {
+	i, err := s.im.Get(ctx, pluginCtx)
 	if err != nil {
 		return nil, err
 	}

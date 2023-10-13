@@ -3,9 +3,7 @@ import React from 'react';
 
 import { GrafanaTheme2, textUtil } from '@grafana/data';
 import { HorizontalGroup, IconButton, Tag, useStyles2 } from '@grafana/ui';
-import config from 'app/core/config';
 import alertDef from 'app/features/alerting/state/alertDef';
-import { CommentManager } from 'app/features/comments/CommentManager';
 
 import { AnnotationsDataFrameViewDTO } from '../types';
 
@@ -30,6 +28,7 @@ export const AnnotationTooltip = ({
   const time = timeFormatter(annotation.time);
   const timeEnd = timeFormatter(annotation.timeEnd);
   let text = annotation.text;
+  let login = annotation.login;
   const tags = annotation.tags;
   let alertText = '';
   let avatar;
@@ -58,16 +57,14 @@ export const AnnotationTooltip = ({
   if (canEdit || canDelete) {
     editControls = (
       <div className={styles.editControls}>
-        {canEdit && <IconButton name={'pen'} size={'sm'} onClick={onEdit} />}
-        {canDelete && <IconButton name={'trash-alt'} size={'sm'} onClick={onDelete} />}
+        {canEdit && <IconButton name={'pen'} size={'sm'} onClick={onEdit} tooltip="Edit" />}
+        {canDelete && <IconButton name={'trash-alt'} size={'sm'} onClick={onDelete} tooltip="Delete" />}
       </div>
     );
   }
 
-  const areAnnotationCommentsEnabled = config.featureToggles.annotationComments;
-
   return (
-    <div className={styles.wrapper} style={areAnnotationCommentsEnabled ? { minWidth: '300px' } : {}}>
+    <div className={styles.wrapper}>
       <div className={styles.header}>
         <HorizontalGroup justify={'space-between'} align={'center'} spacing={'md'}>
           <div className={styles.meta}>
@@ -82,20 +79,18 @@ export const AnnotationTooltip = ({
       </div>
 
       <div className={styles.body}>
-        {text && <div dangerouslySetInnerHTML={{ __html: textUtil.sanitize(text) }} />}
+        {login && 
+          <div>
+              Added by: {login}
+          </div>
+        }
+        {text && <div dangerouslySetInnerHTML={{ __html: "Description: " + textUtil.sanitize(text) }} />}
         {alertText}
         <>
           <HorizontalGroup spacing="xs" wrap>
-            {tags?.map((t, i) => (
-              <Tag name={t} key={`${t}-${i}`} />
-            ))}
+            {tags?.map((t, i) => <Tag name={t} key={`${t}-${i}`} />)}
           </HorizontalGroup>
         </>
-        {areAnnotationCommentsEnabled && (
-          <div className={styles.commentWrapper}>
-            <CommentManager objectType={'annotation'} objectId={annotation.id.toString()} />
-          </div>
-        )}
       </div>
     </div>
   );
@@ -133,7 +128,7 @@ const getStyles = (theme: GrafanaTheme2) => {
       }
     `,
     avatar: css`
-      border-radius: 50%;
+      border-radius: ${theme.shape.radius.circle};
       width: 16px;
       height: 16px;
       margin-right: ${theme.spacing(1)};

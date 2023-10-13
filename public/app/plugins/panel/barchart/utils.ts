@@ -1,18 +1,16 @@
-import { orderBy } from 'lodash';
 import uPlot, { Padding } from 'uplot';
 
 import {
-  ArrayVector,
   DataFrame,
   Field,
   FieldType,
   formattedValueToString,
   getDisplayProcessor,
   getFieldColorModeForField,
+  cacheFieldDisplayNames,
   getFieldSeriesColor,
   GrafanaTheme2,
   outerJoinDataFrames,
-  reduceField,
   TimeZone,
   VizOrientation,
 } from '@grafana/data';
@@ -32,7 +30,7 @@ import { getStackingGroups } from '@grafana/ui/src/components/uPlot/utils';
 import { findField } from 'app/features/dimensions';
 
 import { BarsOptions, getConfig } from './bars';
-import { PanelFieldConfig, PanelOptions, defaultPanelFieldConfig } from './models.gen';
+import { FieldConfig, Options, defaultFieldConfig } from './panelcfg.gen';
 import { BarChartDisplayValues, BarChartDisplayWarning } from './types';
 
 function getBarCharScaleOrientation(orientation: VizOrientation) {
@@ -53,9 +51,9 @@ function getBarCharScaleOrientation(orientation: VizOrientation) {
   };
 }
 
-export interface BarChartOptionsEX extends PanelOptions {
+export interface BarChartOptionsEX extends Options {
   rawValue: (seriesIdx: number, valueIdx: number) => number | null;
-  getColor?: (seriesIdx: number, valueIdx: number, value: any) => string | null;
+  getColor?: (seriesIdx: number, valueIdx: number, value: unknown) => string | null;
   timeZone?: TimeZone;
   fillOpacity?: number;
 }
@@ -79,16 +77,20 @@ export const preparePlotConfigBuilder: UPlotConfigPrepFn<BarChartOptionsEX> = ({
   xTickLabelSpacing = 0,
   legend,
   timeZone,
+  fullHighlight,
 }) => {
   const builder = new UPlotConfigBuilder();
-  const defaultValueFormatter = (seriesIdx: number, value: any) => {
-    return shortenValue(formattedValueToString(frame.fields[seriesIdx].display!(value)), xTickLabelMaxLength);
+
+  const formatValue = (seriesIdx: number, value: unknown) => {
+    return formattedValueToString(frame.fields[seriesIdx].display!(value));
+  };
+
+  const formatShortValue = (seriesIdx: number, value: unknown) => {
+    return shortenValue(formatValue(seriesIdx, value), xTickLabelMaxLength);
   };
 
   // bar orientation -> x scale orientation & direction
   const vizOrientation = getBarCharScaleOrientation(orientation);
-
-  const formatValue = defaultValueFormatter;
 
   // Use bar width when only one field
   if (frame.fields.length === 2) {
@@ -107,6 +109,7 @@ export const preparePlotConfigBuilder: UPlotConfigPrepFn<BarChartOptionsEX> = ({
     getColor,
     fillOpacity,
     formatValue,
+    formatShortValue,
     timeZone,
     text,
     showValue,
@@ -114,6 +117,7 @@ export const preparePlotConfigBuilder: UPlotConfigPrepFn<BarChartOptionsEX> = ({
     xSpacing: xTickLabelSpacing,
     xTimeAuto: frame.fields[0]?.type === FieldType.time && !frame.fields[0].config.unit?.startsWith('time:'),
     negY: frame.fields.map((f) => f.config.custom?.transform === GraphTransform.NegativeY),
+    fullHighlight,
   };
 
   const config = getConfig(opts, theme);
@@ -126,8 +130,13 @@ export const preparePlotConfigBuilder: UPlotConfigPrepFn<BarChartOptionsEX> = ({
 
   builder.setTooltipInterpolator(config.interpolateTooltip);
 
-  if (vizOrientation.xOri === ScaleOrientation.Horizontal && xTickLabelRotation !== 0) {
-    builder.setPadding(getRotationPadding(frame, xTickLabelRotation, xTickLabelMaxLength));
+  if (xTickLabelRotation !== 0) {
+    // these are the amount of space we already have available between plot edge and first label
+    // TODO: removing these hardcoded value requires reading back uplot instance props
+    let lftSpace = 50;
+    let btmSpace = vizOrientation.xOri === ScaleOrientation.Horizontal ? 14 : 5;
+
+    builder.setPadding(getRotationPadding(frame, xTickLabelRotation, xTickLabelMaxLength, lftSpace, btmSpace));
   }
 
   builder.setPrepData(config.prepData);
@@ -155,12 +164,13 @@ export const preparePlotConfigBuilder: UPlotConfigPrepFn<BarChartOptionsEX> = ({
     placement: xFieldAxisPlacement,
     label: frame.fields[0].config.custom?.axisLabel,
     splits: config.xSplits,
+    filter: vizOrientation.xOri === 0 ? config.hFilter : undefined,
     values: config.xValues,
     timeZone,
     grid: { show: false },
     ticks: { show: false },
     gap: 15,
-    tickLabelRotation: xTickLabelRotation * -1,
+    tickLabelRotation: vizOrientation.xOri === 0 ? xTickLabelRotation * -1 : 0,
     theme,
     show: xFieldAxisShow,
   });
@@ -174,7 +184,7 @@ export const preparePlotConfigBuilder: UPlotConfigPrepFn<BarChartOptionsEX> = ({
 
     seriesIndex++;
 
-    const customConfig: PanelFieldConfig = { ...defaultPanelFieldConfig, ...field.config.custom };
+    const customConfig: FieldConfig = { ...defaultFieldConfig, ...field.config.custom };
 
     const scaleKey = field.config.unit || FIXED_UNIT;
     const colorMode = getFieldColorModeForField(field);
@@ -272,6 +282,8 @@ export const preparePlotConfigBuilder: UPlotConfigPrepFn<BarChartOptionsEX> = ({
         size: customConfig.axisWidth,
         placement,
         formatValue: (v, decimals) => formattedValueToString(field.display!(v, decimals)),
+        filter: vizOrientation.yOri === 0 ? config.hFilter : undefined,
+        tickLabelRotation: vizOrientation.xOri === 1 ? xTickLabelRotation * -1 : 0,
         theme,
         grid: { show: customConfig.axisGridShow },
       });
@@ -293,16 +305,22 @@ function shortenValue(value: string, length: number) {
   }
 }
 
-function getRotationPadding(frame: DataFrame, rotateLabel: number, valueMaxLength: number): Padding {
+function getRotationPadding(
+  frame: DataFrame,
+  rotateLabel: number,
+  valueMaxLength: number,
+  lftSpace = 0,
+  btmSpace = 0
+): Padding {
   const values = frame.fields[0].values;
   const fontSize = UPLOT_AXIS_FONT_SIZE;
-  const displayProcessor = frame.fields[0].display ?? ((v) => v);
+  const displayProcessor = frame.fields[0].display;
+  const getProcessedValue = (i: number) => {
+    return displayProcessor ? displayProcessor(values[i]) : values[i];
+  };
   let maxLength = 0;
   for (let i = 0; i < values.length; i++) {
-    let size = measureText(
-      shortenValue(formattedValueToString(displayProcessor(values.get(i))), valueMaxLength),
-      fontSize
-    );
+    let size = measureText(shortenValue(formattedValueToString(getProcessedValue(i)), valueMaxLength), fontSize);
     maxLength = size.width > maxLength ? size.width : maxLength;
   }
 
@@ -311,7 +329,7 @@ function getRotationPadding(frame: DataFrame, rotateLabel: number, valueMaxLengt
     rotateLabel > 0
       ? Math.cos((rotateLabel * Math.PI) / 180) *
         measureText(
-          shortenValue(formattedValueToString(displayProcessor(values.get(values.length - 1))), valueMaxLength),
+          shortenValue(formattedValueToString(getProcessedValue(values.length - 1)), valueMaxLength),
           fontSize
         ).width
       : 0;
@@ -320,25 +338,32 @@ function getRotationPadding(frame: DataFrame, rotateLabel: number, valueMaxLengt
   const paddingLeft =
     rotateLabel < 0
       ? Math.cos((rotateLabel * -1 * Math.PI) / 180) *
-        measureText(shortenValue(formattedValueToString(displayProcessor(values.get(0))), valueMaxLength), fontSize)
-          .width
+        measureText(shortenValue(formattedValueToString(getProcessedValue(0)), valueMaxLength), fontSize).width
       : 0;
 
   // Add padding to the bottom to avoid clipping the rotated labels.
-  const paddingBottom = Math.sin(((rotateLabel >= 0 ? rotateLabel : rotateLabel * -1) * Math.PI) / 180) * maxLength;
+  const paddingBottom =
+    Math.sin(((rotateLabel >= 0 ? rotateLabel : rotateLabel * -1) * Math.PI) / 180) * maxLength - btmSpace;
 
-  return [Math.round(UPLOT_AXIS_FONT_SIZE * uPlot.pxRatio), paddingRight, paddingBottom, paddingLeft];
+  return [
+    Math.round(UPLOT_AXIS_FONT_SIZE * uPlot.pxRatio),
+    paddingRight,
+    paddingBottom,
+    Math.max(0, paddingLeft - lftSpace),
+  ];
 }
 
 /** @internal */
 export function prepareBarChartDisplayValues(
   series: DataFrame[],
   theme: GrafanaTheme2,
-  options: PanelOptions
+  options: Options
 ): BarChartDisplayValues | BarChartDisplayWarning {
   if (!series?.length) {
     return { warn: 'No data in response' };
   }
+
+  cacheFieldDisplayNames(series);
 
   // Bar chart requires a single frame
   const frame =
@@ -407,14 +432,12 @@ export function prepareBarChartDisplayValues(
               },
             },
           },
-          values: new ArrayVector(
-            field.values.toArray().map((v) => {
-              if (!(Number.isFinite(v) || v == null)) {
-                return null;
-              }
-              return v;
-            })
-          ),
+          values: field.values.map((v) => {
+            if (!(Number.isFinite(v) || v == null)) {
+              return null;
+            }
+            return v;
+          }),
         };
 
         if (options.stacking === StackingMode.Percent) {
@@ -452,22 +475,10 @@ export function prepareBarChartDisplayValues(
     }
   }
 
-  if (isLegendOrdered(options.legend)) {
-    const sortKey = options.legend.sortBy!.toLowerCase();
-    const reducers = options.legend.calcs ?? [sortKey];
-    fields = orderBy(
-      fields,
-      (field) => {
-        return reduceField({ field, reducers })[sortKey];
-      },
-      options.legend.sortDesc ? 'desc' : 'asc'
-    );
-  }
-
   let legendFields: Field[] = fields;
   if (options.stacking === StackingMode.Percent) {
     legendFields = fields.map((field) => {
-      const alignedFrameField = frame.fields.find((f) => f.name === field.name)!;
+      const alignedFrameField = frame.fields.find((f) => f.state?.displayName === field.state?.displayName)!;
 
       const copy = {
         ...field,

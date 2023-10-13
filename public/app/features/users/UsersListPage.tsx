@@ -1,7 +1,10 @@
-import React, { PureComponent } from 'react';
+import React, { useEffect, useState } from 'react';
 import { connect, ConnectedProps } from 'react-redux';
+import { useAsyncFn } from 'react-use';
 
 import { renderMarkdown } from '@grafana/data';
+import { selectors as e2eSelectors } from '@grafana/e2e-selectors/src';
+import { getBackendSrv } from '@grafana/runtime';
 import { HorizontalGroup, Pagination, VerticalGroup } from '@grafana/ui';
 import { Page } from 'app/core/components/Page/Page';
 import { contextSrv } from 'app/core/core';
@@ -10,30 +13,35 @@ import { OrgUser, OrgRole, StoreState } from 'app/types';
 import InviteesTable from '../invites/InviteesTable';
 import { fetchInvitees } from '../invites/state/actions';
 import { selectInvitesMatchingQuery } from '../invites/state/selectors';
+import JoinRequestersTable from '../joinRequests/JoinRequestersTable';
+import { fetchJoinRequesters } from '../joinRequests/state/actions';
+import { selectJoinRequestersMatchingQuery } from '../joinRequests/state/selectors';
 
-import UsersActionBar from './UsersActionBar';
-import UsersTable from './UsersTable';
-import { loadUsers, removeUser, updateUser } from './state/actions';
-import { setUsersSearchQuery, setUsersSearchPage } from './state/reducers';
-import { getUsers, getUsersSearchQuery, getUsersSearchPage } from './state/selectors';
+import { UsersActionBar } from './UsersActionBar';
+import { UsersTable } from './UsersTable';
+import { loadUsers, removeUser, updateUser, changePage } from './state/actions';
+import { getUsers, getUsersSearchQuery } from './state/selectors';
 
 function mapStateToProps(state: StoreState) {
   const searchQuery = getUsersSearchQuery(state.users);
   return {
     users: getUsers(state.users),
     searchQuery: getUsersSearchQuery(state.users),
-    searchPage: getUsersSearchPage(state.users),
+    page: state.users.page,
+    totalPages: state.users.totalPages,
+    perPage: state.users.perPage,
     invitees: selectInvitesMatchingQuery(state.invites, searchQuery),
+    joinRequesters: selectJoinRequestersMatchingQuery(state.joinRequests, searchQuery),
     externalUserMngInfo: state.users.externalUserMngInfo,
-    hasFetched: state.users.hasFetched,
+    isLoading: state.users.isLoading,
   };
 }
 
 const mapDispatchToProps = {
   loadUsers,
   fetchInvitees,
-  setUsersSearchQuery,
-  setUsersSearchPage,
+  fetchJoinRequesters,
+  changePage,
   updateUser,
   removeUser,
 };
@@ -43,76 +51,73 @@ const connector = connect(mapStateToProps, mapDispatchToProps);
 export type Props = ConnectedProps<typeof connector>;
 
 export interface State {
-  showInvites: boolean;
+  showUserTypes: string;
 }
 
-const pageLimit = 30;
+const selectors = e2eSelectors.pages.UserListPage.UsersListPage;
 
-export class UsersListPage extends PureComponent<Props, State> {
-  declare externalUserMngInfoHtml: string;
+export const UsersListPageUnconnected = ({
+  users,
+  page,
+  totalPages,
+  invitees,
+  joinRequesters,
+  externalUserMngInfo,
+  isLoading,
+  loadUsers,
+  fetchInvitees,
+  fetchJoinRequesters,
+  changePage,
+  updateUser,
+  removeUser,
+}: Props): JSX.Element => {
+  const [showUserTypes, setshowUserTypes] = useState("users");
+  const [activeOrg, fetchOrg] = useAsyncFn(async () =>{ return await getBackendSrv().get(`/api/orgs/${contextSrv.user.orgId}`)}, []);
+  const externalUserMngInfoHtml = externalUserMngInfo ? renderMarkdown(externalUserMngInfo) : '';
 
-  constructor(props: Props) {
-    super(props);
+  useEffect(() => {
+    loadUsers();
+    fetchInvitees();
+    fetchJoinRequesters();
+    fetchOrg();
+  }, [fetchJoinRequesters, fetchInvitees, loadUsers, fetchOrg]);
 
-    if (this.props.externalUserMngInfo) {
-      this.externalUserMngInfoHtml = renderMarkdown(this.props.externalUserMngInfo);
-    }
-
-    this.state = {
-      showInvites: false,
-    };
-  }
-
-  componentDidMount() {
-    this.fetchUsers();
-    this.fetchInvitees();
-  }
-
-  async fetchUsers() {
-    return await this.props.loadUsers();
-  }
-
-  async fetchInvitees() {
-    return await this.props.fetchInvitees();
-  }
-
-  onRoleChange = (role: OrgRole, user: OrgUser) => {
-    const updatedUser = { ...user, role: role };
-
-    this.props.updateUser(updatedUser);
+  const onRoleChange = (role: OrgRole, user: OrgUser) => {
+    updateUser({ ...user, role: role });
   };
 
-  onShowInvites = () => {
-    this.setState((prevState) => ({
-      showInvites: !prevState.showInvites,
-    }));
+  const onShowUserTypes = (value: string) => {
+    setshowUserTypes(value);
+    loadUsers();
+    fetchInvitees();
+    fetchJoinRequesters();
   };
 
-  getPaginatedUsers = (users: OrgUser[]) => {
-    const offset = (this.props.searchPage - 1) * pageLimit;
-    return users.slice(offset, offset + pageLimit);
-  };
+  const onSwitchAutoApproveJoinRequests = () => {
+    getBackendSrv().put(`/api/orgs/${contextSrv.user.orgId}/autoApprove`, {autoApprove: !activeOrg.value.autoApproveJoinRequests})
+    .then(() => {
+      fetchOrg();
+    });
+  }
 
-  renderTable() {
-    const { invitees, users, setUsersSearchPage } = this.props;
-    const paginatedUsers = this.getPaginatedUsers(users);
-    const totalPages = Math.ceil(users.length / pageLimit);
-
-    if (this.state.showInvites) {
+  const renderTable = () => {
+    if (showUserTypes === 'invites') {
       return <InviteesTable invitees={invitees} />;
+    } else if(showUserTypes === 'joinRequests') {
+      return <JoinRequestersTable joinRequesters={joinRequesters} org={activeOrg} onSwitch={onSwitchAutoApproveJoinRequests}/>
     } else {
       return (
-        <VerticalGroup spacing="md">
+        <VerticalGroup spacing="md" data-testid={selectors.container}>
           <UsersTable
-            users={paginatedUsers}
+            users={users}
             orgId={contextSrv.user.orgId}
-            onRoleChange={(role, user) => this.onRoleChange(role, user)}
-            onRemoveUser={(user) => this.props.removeUser(user.userId)}
+            onRoleChange={(role, user) => onRoleChange(role, user)}
+            onRemoveUser={(user) => removeUser(user.userId)}
           />
           <HorizontalGroup justify="flex-end">
             <Pagination
-              onNavigate={setUsersSearchPage}
-              currentPage={this.props.searchPage}
+              onNavigate={changePage}
+              currentPage={page}
               numberOfPages={totalPages}
               hideWhenSinglePage={true}
             />
@@ -120,26 +125,25 @@ export class UsersListPage extends PureComponent<Props, State> {
         </VerticalGroup>
       );
     }
-  }
+  };
 
-  render() {
-    const { hasFetched } = this.props;
-    const externalUserMngInfoHtml = this.externalUserMngInfoHtml;
+  return (
+    <Page.Contents isLoading={!isLoading}>
+      <UsersActionBar onShowUserTypes={onShowUserTypes} showUserTypes={showUserTypes} />
+      {externalUserMngInfoHtml && (
+        <div className="grafana-info-box" dangerouslySetInnerHTML={{ __html: externalUserMngInfoHtml }} />
+      )}
+      {isLoading && renderTable()}
+    </Page.Contents>
+  );
+};
 
-    return (
-      <Page navId="users">
-        <Page.Contents isLoading={!hasFetched}>
-          <>
-            <UsersActionBar onShowInvites={this.onShowInvites} showInvites={this.state.showInvites} />
-            {externalUserMngInfoHtml && (
-              <div className="grafana-info-box" dangerouslySetInnerHTML={{ __html: externalUserMngInfoHtml }} />
-            )}
-            {hasFetched && this.renderTable()}
-          </>
-        </Page.Contents>
-      </Page>
-    );
-  }
+export const UsersListPageContent = connector(UsersListPageUnconnected);
+
+export default function UsersListPage() {
+  return (
+    <Page navId="users">
+      <UsersListPageContent />
+    </Page>
+  );
 }
-
-export default connector(UsersListPage);

@@ -21,12 +21,12 @@ import { OutsideRangePlugin } from '../timeseries/plugins/OutsideRangePlugin';
 import { ThresholdControlsPlugin } from '../timeseries/plugins/ThresholdControlsPlugin';
 
 import { prepareCandlestickFields } from './fields';
-import { CandlestickOptions, defaultColors, VizDisplayMode } from './models.gen';
+import { Options, defaultCandlestickColors, VizDisplayMode } from './types';
 import { drawMarkers, FieldIndices } from './utils';
 
-interface CandlestickPanelProps extends PanelProps<CandlestickOptions> {}
+interface CandlestickPanelProps extends PanelProps<Options> {}
 
-export const CandlestickPanel: React.FC<CandlestickPanelProps> = ({
+export const CandlestickPanel = ({
   data,
   id,
   timeRange,
@@ -37,7 +37,7 @@ export const CandlestickPanel: React.FC<CandlestickPanelProps> = ({
   fieldConfig,
   onChangeTimeRange,
   replaceVariables,
-}) => {
+}: CandlestickPanelProps) => {
   const { sync, canAddAnnotations, onThresholdsChange, canEditThresholds, showThresholds, onSplitOpen } =
     usePanelContext();
 
@@ -49,9 +49,9 @@ export const CandlestickPanel: React.FC<CandlestickPanelProps> = ({
 
   const info = useMemo(() => {
     return prepareCandlestickFields(data.series, options, theme, timeRange);
-  }, [data, options, theme, timeRange]);
+  }, [data.series, options, theme, timeRange]);
 
-  const { renderers, tweakScale, tweakAxis } = useMemo(() => {
+  const { renderers, tweakScale, tweakAxis, shouldRenderPrice } = useMemo(() => {
     let tweakScale = (opts: ScaleProps, forField: Field) => opts;
     let tweakAxis = (opts: AxisProps, forField: Field) => opts;
 
@@ -59,6 +59,7 @@ export const CandlestickPanel: React.FC<CandlestickPanelProps> = ({
       renderers: [],
       tweakScale,
       tweakAxis,
+      shouldRenderPrice: false,
     };
 
     if (!info) {
@@ -75,7 +76,7 @@ export const CandlestickPanel: React.FC<CandlestickPanelProps> = ({
     }
 
     const { mode, candleStyle, colorStrategy } = options;
-    const colors = { ...defaultColors, ...options.colors };
+    const colors = { ...defaultCandlestickColors, ...options.colors };
     let { open, high, low, close, volume } = fieldMap; // names from matched fields
 
     if (open == null || close == null) {
@@ -159,18 +160,6 @@ export const CandlestickPanel: React.FC<CandlestickPanelProps> = ({
 
     if (shouldRenderPrice) {
       fields = { open, high: high!, low: low!, close };
-
-      // hide series from legend that are rendered as composite markers
-      for (let key in fields) {
-        let field = (info as any)[key] as Field;
-        field.config = {
-          ...field.config,
-          custom: {
-            ...field.config.custom,
-            hideFrom: { legend: true, tooltip: false, viz: false },
-          },
-        };
-      }
     } else {
       // these fields should not be omitted from normal rendering if they arent rendered
       // as part of price markers. they're only here so we can get back their indicies in the
@@ -185,6 +174,7 @@ export const CandlestickPanel: React.FC<CandlestickPanelProps> = ({
     }
 
     return {
+      shouldRenderPrice,
       renderers: [
         {
           fieldMap: fields,
@@ -225,6 +215,20 @@ export const CandlestickPanel: React.FC<CandlestickPanelProps> = ({
         needsNumberField={true}
       />
     );
+  }
+
+  if (shouldRenderPrice) {
+    // hide series from legend that are rendered as composite markers
+    for (let key in renderers[0].fieldMap) {
+      let field = (info as any)[key] as Field;
+      field.config = {
+        ...field.config,
+        custom: {
+          ...field.config.custom,
+          hideFrom: { legend: true, tooltip: false, viz: false },
+        },
+      };
+    }
   }
 
   const enableAnnotationCreation = Boolean(canAddAnnotations && canAddAnnotations());

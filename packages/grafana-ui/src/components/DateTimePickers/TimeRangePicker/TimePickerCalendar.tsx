@@ -16,40 +16,40 @@ import { Header } from './CalendarHeader';
 
 export const getStyles = (theme: GrafanaTheme2, isReversed = false) => {
   return {
-    container: css`
-      top: 0px;
-      position: absolute;
-      ${isReversed ? 'left' : 'right'}: 544px;
-      box-shadow: ${theme.shadows.z3};
-      background-color: ${theme.colors.background.primary};
-      z-index: -1;
-      border: 1px solid ${theme.colors.border.weak};
-      border-radius: 2px 0 0 2px;
+    container: css({
+      top: 0,
+      position: 'absolute',
+      [`${isReversed ? 'left' : 'right'}`]: '544px',
+      boxShadow: theme.shadows.z3,
+      backgroundColor: theme.colors.background.primary,
+      zIndex: -1,
+      border: `1px solid ${theme.colors.border.weak}`,
+      borderRadius: '2px 0 0 2px',
 
-      &:after {
-        display: block;
-        background-color: ${theme.colors.background.primary};
-        width: 19px;
-        height: 100%;
-        content: ${!isReversed ? ' ' : ''};
-        position: absolute;
-        top: 0;
-        right: -19px;
-        border-left: 1px solid ${theme.colors.border.weak};
-      }
-    `,
-    modal: css`
-      box-shadow: ${theme.shadows.z3};
-      left: 50%;
-      position: fixed;
-      top: 50%;
-      transform: translate(-50%, -50%);
-      z-index: ${theme.zIndex.modal};
-    `,
-    content: css`
-      margin: 0 auto;
-      width: 268px;
-    `,
+      '&:after': {
+        display: 'block',
+        backgroundColor: theme.colors.background.primary,
+        width: '19px',
+        height: '100%',
+        content: `${!isReversed ? '" "' : '""'}`,
+        position: 'absolute',
+        top: 0,
+        right: '-19px',
+        borderLeft: `1px solid ${theme.colors.border.weak}`,
+      },
+    }),
+    modal: css({
+      boxShadow: theme.shadows.z3,
+      left: '50%',
+      position: 'fixed',
+      top: '50%',
+      transform: 'translate(-50%, -50%)',
+      zIndex: theme.zIndex.modal,
+    }),
+    content: css({
+      margin: '0 auto',
+      width: '268px',
+    }),
   };
 };
 
@@ -64,8 +64,6 @@ export interface TimePickerCalendarProps {
   timeZone?: TimeZone;
   isReversed?: boolean;
 }
-
-const stopPropagation = (event: React.MouseEvent<HTMLDivElement>) => event.stopPropagation();
 
 function TimePickerCalendar(props: TimePickerCalendarProps) {
   const theme = useTheme2();
@@ -95,7 +93,7 @@ function TimePickerCalendar(props: TimePickerCalendarProps) {
   if (isFullscreen) {
     return (
       <FocusScope contain restoreFocus autoFocus>
-        <section className={styles.container} onClick={stopPropagation} ref={ref} {...overlayProps} {...dialogProps}>
+        <section className={styles.container} ref={ref} {...overlayProps} {...dialogProps}>
           <Header {...props} />
           <Body {...props} />
         </section>
@@ -105,9 +103,9 @@ function TimePickerCalendar(props: TimePickerCalendarProps) {
 
   return (
     <OverlayContainer>
-      <div className={modalBackdrop} onClick={stopPropagation} />
+      <div className={modalBackdrop} />
       <FocusScope contain autoFocus restoreFocus>
-        <section className={styles.modal} onClick={stopPropagation} ref={ref} {...overlayProps} {...dialogProps}>
+        <section className={styles.modal} ref={ref} {...overlayProps} {...dialogProps}>
           <div className={styles.content} aria-label={selectors.components.TimePicker.calendar.label}>
             <Header {...props} />
             <Body {...props} />

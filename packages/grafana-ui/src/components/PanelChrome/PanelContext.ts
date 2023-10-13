@@ -8,12 +8,17 @@ import {
   ThresholdsConfig,
   SplitOpen,
   CoreApp,
+  DataFrame,
 } from '@grafana/data';
+
+import { AdHocFilterItem } from '../Table/types';
 
 import { SeriesVisibilityChangeMode } from '.';
 
 /** @alpha */
 export interface PanelContext {
+  /** Identifier for the events scope */
+  eventsScope: string;
   eventBus: EventBus;
 
   /** Dashboard panels sync */
@@ -37,6 +42,11 @@ export interface PanelContext {
   onAnnotationCreate?: (annotation: AnnotationEventUIModel) => void;
   onAnnotationUpdate?: (annotation: AnnotationEventUIModel) => void;
   onAnnotationDelete?: (id: string) => void;
+
+  /**
+   * Used from visualizations like Table to add ad-hoc filters from cell values
+   */
+  onAddAdHocFilter?: (item: AdHocFilterItem) => void;
 
   /**
    * Enables modifying thresholds directly from the panel
@@ -75,9 +85,16 @@ export interface PanelContext {
    * Called when a panel is changing the sort order of the legends.
    */
   onToggleLegendSort?: (sortBy: string) => void;
+
+  /**
+   * Optional, only some contexts support this. This action can be cancelled by user which will result
+   * in a the Promise resolving to a false value.
+   */
+  onUpdateData?: (frames: DataFrame[]) => Promise<boolean>;
 }
 
 export const PanelContextRoot = React.createContext<PanelContext>({
+  eventsScope: 'global',
   eventBus: new EventBusSrv(),
 });
 

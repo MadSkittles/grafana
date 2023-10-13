@@ -8,9 +8,11 @@ import (
 var (
 	ErrFixedRolePrefixMissing = errors.New("fixed role should be prefixed with '" + FixedRolePrefix + "'")
 	ErrInvalidBuiltinRole     = errors.New("built-in role is not valid")
+	ErrNoneRoleAssignment     = errors.New("none role cannot receive permissions")
 	ErrInvalidScope           = errors.New("invalid scope")
 	ErrResolverNotFound       = errors.New("no resolver found")
 	ErrPluginIDRequired       = errors.New("plugin ID is required")
+	ErrRoleNotFound           = errors.New("role not found")
 )
 
 type ErrorInvalidRole struct{}
@@ -42,5 +44,19 @@ func (e *ErrorActionPrefixMissing) Error() string {
 }
 
 func (e *ErrorActionPrefixMissing) Unwrap() error {
+	return &ErrorInvalidRole{}
+}
+
+type ErrorScopeTarget struct {
+	Action        string
+	Scope         string
+	ExpectedScope string
+}
+
+func (e *ErrorScopeTarget) Error() string {
+	return fmt.Sprintf("expected action '%s' to be scoped with '%v', found '%v'", e.Action, e.ExpectedScope, e.Scope)
+}
+
+func (e *ErrorScopeTarget) Unwrap() error {
 	return &ErrorInvalidRole{}
 }

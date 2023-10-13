@@ -4,19 +4,18 @@ import React from 'react';
 import { GrafanaTheme2 } from '@grafana/data';
 import { Stack } from '@grafana/experimental';
 import { Icon, Tooltip, useStyles2 } from '@grafana/ui';
-import { FolderPicker, Props as FolderPickerProps } from 'app/core/components/Select/FolderPicker';
-import { PermissionLevelString } from 'app/types';
+import { OldFolderPicker, Props as FolderPickerProps } from 'app/core/components/Select/OldFolderPicker';
+import { PermissionLevelString, SearchQueryType } from 'app/types';
 
-import { FolderWarning, CustomAdd } from '../../../../../core/components/Select/FolderPicker';
+import { FolderWarning, CustomAdd } from '../../../../../core/components/Select/OldFolderPicker';
 
 export interface Folder {
   title: string;
-  id: number;
+  uid: string;
 }
 
 export interface RuleFolderPickerProps extends Omit<FolderPickerProps, 'initialTitle' | 'initialFolderId'> {
   value?: Folder;
-  dissalowSlashes: boolean;
 }
 
 const SlashesWarning = () => {
@@ -49,15 +48,15 @@ export function RuleFolderPicker(props: RuleFolderPickerProps) {
   };
 
   return (
-    <FolderPicker
+    <OldFolderPicker
       showRoot={false}
       rootName=""
       allowEmpty={true}
       initialTitle={value?.title}
-      initialFolderId={value?.id}
-      accessControlMetadata
+      initialFolderUid={value?.uid}
+      searchQueryType={SearchQueryType.AlertFolder}
       {...props}
-      permissionLevel={PermissionLevelString.View}
+      permissionLevel={PermissionLevelString.Edit}
       customAdd={customAdd}
       folderWarning={folderWarning}
     />

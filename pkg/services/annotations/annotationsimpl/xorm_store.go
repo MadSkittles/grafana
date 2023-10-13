@@ -10,9 +10,10 @@ import (
 
 	"github.com/grafana/grafana/pkg/infra/db"
 	"github.com/grafana/grafana/pkg/infra/log"
-	"github.com/grafana/grafana/pkg/models"
 	ac "github.com/grafana/grafana/pkg/services/accesscontrol"
 	"github.com/grafana/grafana/pkg/services/annotations"
+	"github.com/grafana/grafana/pkg/services/dashboards"
+	"github.com/grafana/grafana/pkg/services/featuremgmt"
 	"github.com/grafana/grafana/pkg/services/sqlstore"
 	"github.com/grafana/grafana/pkg/services/sqlstore/permissions"
 	"github.com/grafana/grafana/pkg/services/sqlstore/searchstore"
@@ -42,6 +43,7 @@ func validateTimeRange(item *annotations.Item) error {
 
 type xormRepositoryImpl struct {
 	cfg               *setting.Cfg
+	features          featuremgmt.FeatureToggles
 	db                db.DB
 	log               log.Logger
 	maximumTagsLength int64
@@ -77,8 +79,13 @@ func (r *xormRepositoryImpl) Add(ctx context.Context, item *annotations.Item) er
 func (r *xormRepositoryImpl) AddMany(ctx context.Context, items []annotations.Item) error {
 	hasTags := make([]annotations.Item, 0)
 	hasNoTags := make([]annotations.Item, 0)
-
-	for i, item := range items {
+	if len(items) == 0 {
+		return nil
+	}
+	for i := range items {
+		// The validation logic needs to work in terms of pointers.
+		// So, force everything else to work in terms of pointers too, to avoid any implicit extra copying.
+		item := &items[i]
 		tags := tag.ParseTagPairs(item.Tags)
 		item.Tags = tag.JoinTagPairs(tags)
 		item.Created = timeNow().UnixNano() / int64(time.Millisecond)
@@ -86,14 +93,14 @@ func (r *xormRepositoryImpl) AddMany(ctx context.Context, items []annotations.It
 		if item.Epoch == 0 {
 			item.Epoch = item.Created
 		}
-		if err := r.validateItem(&items[i]); err != nil {
+		if err := r.validateItem(item); err != nil {
 			return err
 		}
 
 		if len(item.Tags) > 0 {
-			hasTags = append(hasTags, item)
+			hasTags = append(hasTags, *item)
 		} else {
-			hasNoTags = append(hasNoTags, item)
+			hasNoTags = append(hasNoTags, *item)
 		}
 	}
 
@@ -126,7 +133,7 @@ func (r *xormRepositoryImpl) synchronizeTags(ctx context.Context, item *annotati
 				return err
 			}
 			for _, tag := range tags {
-				if _, err := sess.Exec("INSERT INTO annotation_tag (annotation_id, tag_id) VALUES(?,?)", item.Id, tag.Id); err != nil {
+				if _, err := sess.Exec("INSERT INTO annotation_tag (annotation_id, tag_id) VALUES(?,?)", item.ID, tag.Id); err != nil {
 					return err
 				}
 			}
@@ -136,14 +143,20 @@ func (r *xormRepositoryImpl) synchronizeTags(ctx context.Context, item *annotati
 }
 
 func (r *xormRepositoryImpl) Update(ctx context.Context, item *annotations.Item) error {
-	return r.db.WithTransactionalDbSession(ctx, func(sess *db.Session) error {
+	return r.db.InTransaction(ctx, func(ctx context.Context) error {
+		return r.update(ctx, item)
+	})
+}
+
+func (r *xormRepositoryImpl) update(ctx context.Context, item *annotations.Item) error {
+	return r.db.WithDbSession(ctx, func(sess *db.Session) error {
 		var (
 			isExist bool
 			err     error
 		)
 		existing := new(annotations.Item)
 
-		isExist, err = sess.Table("annotation").Where("id=? AND org_id=?", item.Id, item.OrgId).Get(existing)
+		isExist, err = sess.Table("annotation").Where("id=? AND org_id=?", item.ID, item.OrgID).Get(existing)
 
 		if err != nil {
 			return err
@@ -162,16 +175,20 @@ func (r *xormRepositoryImpl) Update(ctx context.Context, item *annotations.Item)
 			existing.EpochEnd = item.EpochEnd
 		}
 
+		if item.Data != nil {
+			existing.Data = item.Data
+		}
+
 		if item.Tags != nil {
 			tags, err := r.tagService.EnsureTagsExist(ctx, tag.ParseTagPairs(item.Tags))
 			if err != nil {
 				return err
 			}
-			if _, err := sess.Exec("DELETE FROM annotation_tag WHERE annotation_id = ?", existing.Id); err != nil {
+			if _, err := sess.Exec("DELETE FROM annotation_tag WHERE annotation_id = ?", existing.ID); err != nil {
 				return err
 			}
 			for _, tag := range tags {
-				if _, err := sess.Exec("INSERT INTO annotation_tag (annotation_id, tag_id) VALUES(?,?)", existing.Id, tag.Id); err != nil {
+				if _, err := sess.Exec("INSERT INTO annotation_tag (annotation_id, tag_id) VALUES(?,?)", existing.ID, tag.Id); err != nil {
 					return err
 				}
 			}
@@ -183,7 +200,7 @@ func (r *xormRepositoryImpl) Update(ctx context.Context, item *annotations.Item)
 			return err
 		}
 
-		_, err = sess.Table("annotation").ID(existing.Id).Cols("epoch", "text", "epoch_end", "updated", "tags").Update(existing)
+		_, err = sess.Table("annotation").ID(existing.ID).Cols("epoch", "text", "epoch_end", "updated", "tags", "data").Update(existing)
 		return err
 	})
 }
@@ -219,32 +236,32 @@ func (r *xormRepositoryImpl) Get(ctx context.Context, query *annotations.ItemQue
 			`)
 
 		sql.WriteString(`WHERE a.org_id = ?`)
-		params = append(params, query.OrgId)
+		params = append(params, query.OrgID)
 
-		if query.AnnotationId != 0 {
+		if query.AnnotationID != 0 {
 			// fmt.Print("annotation query")
 			sql.WriteString(` AND a.id = ?`)
-			params = append(params, query.AnnotationId)
+			params = append(params, query.AnnotationID)
 		}
 
-		if query.AlertId != 0 {
+		if query.AlertID != 0 {
 			sql.WriteString(` AND a.alert_id = ?`)
-			params = append(params, query.AlertId)
+			params = append(params, query.AlertID)
 		}
 
-		if query.DashboardId != 0 {
+		if query.DashboardID != 0 {
 			sql.WriteString(` AND a.dashboard_id = ?`)
-			params = append(params, query.DashboardId)
+			params = append(params, query.DashboardID)
 		}
 
-		if query.PanelId != 0 {
+		if query.PanelID != 0 {
 			sql.WriteString(` AND a.panel_id = ?`)
-			params = append(params, query.PanelId)
+			params = append(params, query.PanelID)
 		}
 
-		if query.UserId != 0 {
+		if query.UserID != 0 {
 			sql.WriteString(` AND a.user_id = ?`)
-			params = append(params, query.UserId)
+			params = append(params, query.UserID)
 		}
 
 		if query.From > 0 && query.To > 0 {
@@ -290,13 +307,15 @@ func (r *xormRepositoryImpl) Get(ctx context.Context, query *annotations.ItemQue
 			}
 		}
 
+		var acFilter acFilter
 		if !ac.IsDisabled(r.cfg) {
-			acFilter, acArgs, err := getAccessControlFilter(query.SignedInUser)
+			var err error
+			acFilter, err = r.getAccessControlFilter(query.SignedInUser)
 			if err != nil {
 				return err
 			}
-			sql.WriteString(fmt.Sprintf(" AND (%s)", acFilter))
-			params = append(params, acArgs...)
+			sql.WriteString(fmt.Sprintf(" AND (%s)", acFilter.where))
+			params = append(params, acFilter.whereParams...)
 		}
 
 		if query.Limit == 0 {
@@ -305,6 +324,14 @@ func (r *xormRepositoryImpl) Get(ctx context.Context, query *annotations.ItemQue
 
 		// order of ORDER BY arguments match the order of a sql index for performance
 		sql.WriteString(" ORDER BY a.org_id, a.epoch_end DESC, a.epoch DESC" + r.db.GetDialect().Limit(query.Limit) + " ) dt on dt.id = annotation.id")
+		if acFilter.recQueries != "" {
+			var sb bytes.Buffer
+			sb.WriteString(acFilter.recQueries)
+			sb.WriteString(sql.String())
+			sql = sb
+			params = append(acFilter.recParams, params...)
+		}
+
 		if err := sess.SQL(sql.String(), params...).Find(&items); err != nil {
 			items = nil
 			return err
@@ -316,13 +343,23 @@ func (r *xormRepositoryImpl) Get(ctx context.Context, query *annotations.ItemQue
 	return items, err
 }
 
-func getAccessControlFilter(user *user.SignedInUser) (string, []interface{}, error) {
+type acFilter struct {
+	where       string
+	whereParams []interface{}
+	recQueries  string
+	recParams   []interface{}
+}
+
+func (r *xormRepositoryImpl) getAccessControlFilter(user *user.SignedInUser) (acFilter, error) {
+	var recQueries string
+	var recQueriesParams []interface{}
+
 	if user == nil || user.Permissions[user.OrgID] == nil {
-		return "", nil, errors.New("missing permissions")
+		return acFilter{}, errors.New("missing permissions")
 	}
 	scopes, has := user.Permissions[user.OrgID][ac.ActionAnnotationsRead]
 	if !has {
-		return "", nil, errors.New("missing permissions")
+		return acFilter{}, errors.New("missing permissions")
 	}
 	types, hasWildcardScope := ac.ParseScopes(ac.ScopeAnnotationsProvider.GetResourceScopeType(""), scopes)
 	if hasWildcardScope {
@@ -338,13 +375,31 @@ func getAccessControlFilter(user *user.SignedInUser) (string, []interface{}, err
 		}
 		// annotation read permission with scope annotations:type:dashboard allows listing annotations from dashboards which the user can view
 		if t == annotations.Dashboard.String() {
-			dashboardFilter, dashboardParams := permissions.NewAccessControlDashboardPermissionFilter(user, models.PERMISSION_VIEW, searchstore.TypeDashboard).Where()
+			recursiveQueriesAreSupported, err := r.db.RecursiveQueriesAreSupported()
+			if err != nil {
+				return acFilter{}, err
+			}
+
+			filterRBAC := permissions.NewAccessControlDashboardPermissionFilter(user, dashboards.PERMISSION_VIEW, searchstore.TypeDashboard, r.features, recursiveQueriesAreSupported)
+			dashboardFilter, dashboardParams := filterRBAC.Where()
+			recQueries, recQueriesParams = filterRBAC.With()
+			leftJoin := filterRBAC.LeftJoin()
 			filter := fmt.Sprintf("a.dashboard_id IN(SELECT id FROM dashboard WHERE %s)", dashboardFilter)
+			if leftJoin != "" {
+				filter = fmt.Sprintf("a.dashboard_id IN(SELECT dashboard.id FROM dashboard LEFT OUTER JOIN %s WHERE %s)", leftJoin, dashboardFilter)
+			}
 			filters = append(filters, filter)
 			params = dashboardParams
 		}
 	}
-	return strings.Join(filters, " OR "), params, nil
+
+	f := acFilter{
+		where:       strings.Join(filters, " OR "),
+		whereParams: params,
+		recQueries:  recQueries,
+		recParams:   recQueriesParams,
+	}
+	return f, nil
 }
 
 func (r *xormRepositoryImpl) Delete(ctx context.Context, params *annotations.DeleteParams) error {
@@ -354,27 +409,27 @@ func (r *xormRepositoryImpl) Delete(ctx context.Context, params *annotations.Del
 			annoTagSQL string
 		)
 
-		r.log.Info("delete", "orgId", params.OrgId)
-		if params.Id != 0 {
+		r.log.Info("delete", "orgId", params.OrgID)
+		if params.ID != 0 {
 			annoTagSQL = "DELETE FROM annotation_tag WHERE annotation_id IN (SELECT id FROM annotation WHERE id = ? AND org_id = ?)"
 			sql = "DELETE FROM annotation WHERE id = ? AND org_id = ?"
 
-			if _, err := sess.Exec(annoTagSQL, params.Id, params.OrgId); err != nil {
+			if _, err := sess.Exec(annoTagSQL, params.ID, params.OrgID); err != nil {
 				return err
 			}
 
-			if _, err := sess.Exec(sql, params.Id, params.OrgId); err != nil {
+			if _, err := sess.Exec(sql, params.ID, params.OrgID); err != nil {
 				return err
 			}
 		} else {
 			annoTagSQL = "DELETE FROM annotation_tag WHERE annotation_id IN (SELECT id FROM annotation WHERE dashboard_id = ? AND panel_id = ? AND org_id = ?)"
 			sql = "DELETE FROM annotation WHERE dashboard_id = ? AND panel_id = ? AND org_id = ?"
 
-			if _, err := sess.Exec(annoTagSQL, params.DashboardId, params.PanelId, params.OrgId); err != nil {
+			if _, err := sess.Exec(annoTagSQL, params.DashboardID, params.PanelID, params.OrgID); err != nil {
 				return err
 			}
 
-			if _, err := sess.Exec(sql, params.DashboardId, params.PanelId, params.OrgId); err != nil {
+			if _, err := sess.Exec(sql, params.DashboardID, params.PanelID, params.OrgID); err != nil {
 				return err
 			}
 		}
@@ -402,9 +457,10 @@ func (r *xormRepositoryImpl) GetTags(ctx context.Context, query *annotations.Tag
 			count(*) as count
 		FROM tag
 		INNER JOIN annotation_tag ON tag.id = annotation_tag.tag_id
+		INNER JOIN annotation ON annotation.id = annotation_tag.annotation_id
 `)
 
-		sql.WriteString(`WHERE EXISTS(SELECT 1 FROM annotation WHERE annotation.id = annotation_tag.annotation_id AND annotation.org_id = ?)`)
+		sql.WriteString(`WHERE annotation.org_id = ?`)
 		params = append(params, query.OrgID)
 
 		sql.WriteString(` AND (` + tagKey + ` ` + r.db.GetDialect().LikeStr() + ` ? OR ` + tagValue + ` ` + r.db.GetDialect().LikeStr() + ` ?)`)

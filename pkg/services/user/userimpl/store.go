@@ -11,7 +11,6 @@ import (
 	"github.com/grafana/grafana/pkg/infra/db"
 	"github.com/grafana/grafana/pkg/infra/log"
 	"github.com/grafana/grafana/pkg/services/accesscontrol"
-	"github.com/grafana/grafana/pkg/services/sqlstore"
 	"github.com/grafana/grafana/pkg/services/sqlstore/migrator"
 	"github.com/grafana/grafana/pkg/services/user"
 	"github.com/grafana/grafana/pkg/setting"
@@ -24,6 +23,7 @@ type store interface {
 	GetByID(context.Context, int64) (*user.User, error)
 	GetNotServiceAccount(context.Context, int64) (*user.User, error)
 	Delete(context.Context, int64) error
+	LoginConflict(ctx context.Context, login, email string, caseInsensitive bool) error
 	CaseInsensitiveLoginConflict(context.Context, string, string) error
 	GetByLogin(context.Context, *user.GetUserByLoginQuery) (*user.User, error)
 	GetByEmail(context.Context, *user.GetUserByEmailQuery) (*user.User, error)
@@ -59,12 +59,11 @@ func ProvideStore(db db.DB, cfg *setting.Cfg) sqlStore {
 }
 
 func (ss *sqlStore) Insert(ctx context.Context, cmd *user.User) (int64, error) {
-	var userID int64
 	var err error
 	err = ss.db.WithTransactionalDbSession(ctx, func(sess *db.Session) error {
 		sess.UseBool("is_admin")
 
-		if userID, err = sess.Insert(cmd); err != nil {
+		if _, err = sess.Insert(cmd); err != nil {
 			return err
 		}
 		sess.PublishAfterCommit(&events.UserCreated{
@@ -79,12 +78,26 @@ func (ss *sqlStore) Insert(ctx context.Context, cmd *user.User) (int64, error) {
 	if err != nil {
 		return 0, err
 	}
-	return userID, nil
+
+	// verify that user was created and cmd.ID was updated with the actual new userID
+	_, err = ss.getAnyUserType(ctx, cmd.ID)
+	if err != nil {
+		return 0, err
+	}
+	return cmd.ID, nil
 }
 
 func (ss *sqlStore) Get(ctx context.Context, usr *user.User) (*user.User, error) {
+	ret := &user.User{}
 	err := ss.db.WithDbSession(ctx, func(sess *db.Session) error {
-		exists, err := sess.Where("email=? OR login=?", usr.Email, usr.Login).Get(usr)
+		where := "email=? OR login=?"
+		login := usr.Login
+		email := usr.Email
+		if ss.cfg.CaseInsensitiveLogin {
+			where = "LOWER(email)=LOWER(?) OR LOWER(login)=LOWER(?)"
+		}
+
+		exists, err := sess.Where(where, email, login).Get(ret)
 		if !exists {
 			return user.ErrUserNotFound
 		}
@@ -96,7 +109,8 @@ func (ss *sqlStore) Get(ctx context.Context, usr *user.User) (*user.User, error)
 	if err != nil {
 		return nil, err
 	}
-	return usr, nil
+
+	return ret, nil
 }
 
 func (ss *sqlStore) Delete(ctx context.Context, userID int64) error {
@@ -185,7 +199,6 @@ func (ss *sqlStore) GetByLogin(ctx context.Context, query *user.GetUserByLoginQu
 				where = "LOWER(email)=LOWER(?)"
 			}
 			has, err = sess.Where(ss.notServiceAccountFilter()).Where(where, query.LoginOrEmail).Get(usr)
-
 			if err != nil {
 				return err
 			}
@@ -213,7 +226,11 @@ func (ss *sqlStore) GetByLogin(ctx context.Context, query *user.GetUserByLoginQu
 		return nil
 	})
 
-	return usr, err
+	if err != nil {
+		return nil, err
+	}
+
+	return usr, nil
 }
 
 func (ss *sqlStore) GetByEmail(ctx context.Context, query *user.GetUserByEmailQuery) (*user.User, error) {
@@ -261,6 +278,43 @@ func (ss *sqlStore) userCaseInsensitiveLoginConflict(ctx context.Context, sess *
 		return &user.ErrCaseInsensitiveLoginConflict{Users: users}
 	}
 
+	return nil
+}
+
+// LoginConflict returns an error if the provided email or login are already
+// associated with a user. If caseInsensitive is true the search is not case
+// sensitive.
+func (ss *sqlStore) LoginConflict(ctx context.Context, login, email string, caseInsensitive bool) error {
+	err := ss.db.WithDbSession(ctx, func(sess *db.Session) error {
+		return ss.loginConflict(ctx, sess, login, email, caseInsensitive)
+	})
+	return err
+}
+
+func (ss *sqlStore) loginConflict(ctx context.Context, sess *db.Session, login, email string, caseInsensitive bool) error {
+	users := make([]user.User, 0)
+	where := "email=? OR login=?"
+	if caseInsensitive {
+		where = "LOWER(email)=LOWER(?) OR LOWER(login)=LOWER(?)"
+		login = strings.ToLower(login)
+		email = strings.ToLower(email)
+	}
+
+	exists, err := sess.Where(where, email, login).Get(&user.User{})
+	if err != nil {
+		return err
+	}
+	if exists {
+		return user.ErrUserAlreadyExists
+	}
+	if err := sess.Where("LOWER(email)=LOWER(?) OR LOWER(login)=LOWER(?)",
+		email, login).Find(&users); err != nil {
+		return err
+	}
+
+	if len(users) > 1 {
+		return &user.ErrCaseInsensitiveLoginConflict{Users: users}
+	}
 	return nil
 }
 
@@ -314,6 +368,9 @@ func (ss *sqlStore) ChangePassword(ctx context.Context, cmd *user.ChangeUserPass
 }
 
 func (ss *sqlStore) UpdateLastSeenAt(ctx context.Context, cmd *user.UpdateUserLastSeenAtCommand) error {
+	if cmd.UserID <= 0 {
+		return user.ErrUpdateInvalidID
+	}
 	return ss.db.WithTransactionalDbSession(ctx, func(sess *db.Session) error {
 		user := user.User{
 			ID:         cmd.UserID,
@@ -343,14 +400,11 @@ func (ss *sqlStore) GetSignedInUser(ctx context.Context, query *user.GetSignedIn
 		u.help_flags1         as help_flags1,
 		u.last_seen_at        as last_seen_at,
 		(SELECT COUNT(*) FROM org_user where org_user.user_id = u.id) as org_count,
-		user_auth.auth_module as external_auth_module,
-		user_auth.auth_id     as external_auth_id,
 		org.name              as org_name,
 		org_user.role         as org_role,
 		org.id                as org_id,
 		u.is_service_account  as is_service_account
 		FROM ` + ss.dialect.Quote("user") + ` as u
-		LEFT OUTER JOIN user_auth on user_auth.user_id = u.id
 		LEFT OUTER JOIN org_user on org_user.org_id = ` + orgId + ` and org_user.user_id = u.id
 		LEFT OUTER JOIN org on org.id = org_user.org_id `
 
@@ -371,6 +425,8 @@ func (ss *sqlStore) GetSignedInUser(ctx context.Context, query *user.GetSignedIn
 			} else {
 				sess.SQL(rawSQL+"WHERE u.email=?", query.Email)
 			}
+		default:
+			return user.ErrNoUniqueID
 		}
 		has, err := sess.Get(&signedInUser)
 		if err != nil {
@@ -384,9 +440,6 @@ func (ss *sqlStore) GetSignedInUser(ctx context.Context, query *user.GetSignedIn
 			signedInUser.OrgName = "Org missing"
 		}
 
-		if signedInUser.ExternalAuthModule != "oauth_grafana_com" {
-			signedInUser.ExternalAuthID = ""
-		}
 		return nil
 	})
 	return &signedInUser, err
@@ -470,7 +523,7 @@ func (ss *sqlStore) Count(ctx context.Context) (int64, error) {
 	}
 
 	r := result{}
-	err := ss.db.WithDbSession(ctx, func(sess *sqlstore.DBSession) error {
+	err := ss.db.WithDbSession(ctx, func(sess *db.Session) error {
 		rawSQL := fmt.Sprintf("SELECT COUNT(*) as count from %s WHERE is_service_account=%s", ss.db.GetDialect().Quote("user"), ss.db.GetDialect().BooleanStr(false))
 		if _, err := sess.SQL(rawSQL).Get(&r); err != nil {
 			return err
@@ -647,4 +700,20 @@ func (ss *sqlStore) Search(ctx context.Context, query *user.SearchUsersQuery) (*
 		return err
 	})
 	return &result, err
+}
+
+// getAnyUserType searches for a user record by ID. The user account may be a service account.
+func (ss *sqlStore) getAnyUserType(ctx context.Context, userID int64) (*user.User, error) {
+	usr := user.User{ID: userID}
+	err := ss.db.WithDbSession(ctx, func(sess *db.Session) error {
+		has, err := sess.Get(&usr)
+		if err != nil {
+			return err
+		}
+		if !has {
+			return user.ErrUserNotFound
+		}
+		return nil
+	})
+	return &usr, err
 }

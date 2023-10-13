@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useMemo } from 'react';
 
 import { PluginError } from '@grafana/data';
 import { useDispatch, useSelector } from 'app/types';
@@ -6,55 +6,43 @@ import { useDispatch, useSelector } from 'app/types';
 import { sortPlugins, Sorters } from '../helpers';
 import { CatalogPlugin, PluginListDisplayMode } from '../types';
 
-import { fetchAll, fetchDetails, fetchRemotePlugins, install, uninstall } from './actions';
+import { fetchAll, fetchDetails, fetchRemotePlugins, install, uninstall, fetchAllLocal, unsetInstall } from './actions';
 import { setDisplayMode } from './reducer';
 import {
-  find,
-  selectAll,
+  selectPlugins,
   selectById,
   selectIsRequestPending,
   selectRequestError,
   selectIsRequestNotFetched,
   selectDisplayMode,
   selectPluginErrors,
+  type PluginFilters,
 } from './selectors';
 
-type Filters = {
-  query?: string; // Note: this will be an escaped regex string as it comes from `FilterInput`
-  filterBy?: string;
-  filterByType?: string;
-  sortBy?: Sorters;
-};
-
-export const useGetAllWithFilters = ({
-  query = '',
-  filterBy = 'installed',
-  filterByType = 'all',
-  sortBy = Sorters.nameAsc,
-}: Filters) => {
+export const useGetAll = (filters: PluginFilters, sortBy: Sorters = Sorters.nameAsc) => {
   useFetchAll();
 
-  const filtered = useSelector(find(query, filterBy, filterByType));
+  const selector = useMemo(() => selectPlugins(filters), [filters]);
+  const plugins = useSelector(selector);
   const { isLoading, error } = useFetchStatus();
-  const sortedAndFiltered = sortPlugins(filtered, sortBy);
+  const sortedPlugins = sortPlugins(plugins, sortBy);
 
   return {
     isLoading,
     error,
-    plugins: sortedAndFiltered,
+    plugins: sortedPlugins,
   };
-};
-
-export const useGetAll = (): CatalogPlugin[] => {
-  useFetchAll();
-
-  return useSelector(selectAll);
 };
 
 export const useGetSingle = (id: string): CatalogPlugin | undefined => {
   useFetchAll();
   useFetchDetails(id);
 
+  return useSelector((state) => selectById(state, id));
+};
+
+export const useGetSingleLocalWithoutDetails = (id: string): CatalogPlugin | undefined => {
+  useFetchAllLocal();
   return useSelector((state) => selectById(state, id));
 };
 
@@ -67,6 +55,12 @@ export const useGetErrors = (): PluginError[] => {
 export const useInstall = () => {
   const dispatch = useDispatch();
   return (id: string, version?: string, isUpdating?: boolean) => dispatch(install({ id, version, isUpdating }));
+};
+
+export const useUnsetInstall = () => {
+  const dispatch = useDispatch();
+
+  return () => dispatch(unsetInstall());
 };
 
 export const useUninstall = () => {
@@ -115,6 +109,16 @@ export const useFetchAll = () => {
 
   useEffect(() => {
     isNotFetched && dispatch(fetchAll());
+  }, []); // eslint-disable-line
+};
+
+// Only fetches in case they were not fetched yet
+export const useFetchAllLocal = () => {
+  const dispatch = useDispatch();
+  const isNotFetched = useSelector(selectIsRequestNotFetched(fetchAllLocal.typePrefix));
+
+  useEffect(() => {
+    isNotFetched && dispatch(fetchAllLocal());
   }, []); // eslint-disable-line
 };
 

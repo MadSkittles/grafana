@@ -11,6 +11,11 @@ keywords:
   - templates
   - variables
   - queries
+labels:
+  products:
+    - cloud
+    - enterprise
+    - oss
 menuTitle: Template variables
 title: Microsoft SQL Server template variables
 weight: 400
@@ -22,7 +27,7 @@ Instead of hard-coding details such as server, application, and sensor names in 
 Grafana lists these variables in dropdown select boxes at the top of the dashboard to help you change the data displayed in your dashboard.
 Grafana refers to such variables as template variables.
 
-For an introduction to templating and template variables, refer to the [Templating]({{< relref "../../../dashboards/variables" >}}) and [Add and manage variables]({{< relref "../../../dashboards/variables/add-template-variables" >}}) documentation.
+For an introduction to templating and template variables, refer to the [Templating][variables] and [Add and manage variables][add-template-variables] documentation.
 
 ## Query variable
 
@@ -88,8 +93,19 @@ ORDER BY atimestamp
 
 ### Disabling Quoting for Multi-value Variables
 
-Grafana automatically creates a quoted, comma-separated string for multi-value variables. For example: if `server01` and `server02` are selected then it will be formatted as: `'server01', 'server02'`. Do disable quoting, use the csv formatting option for variables:
+Grafana automatically creates a quoted, comma-separated string for multi-value variables. For example: if `server01` and `server02` are selected then it will be formatted as: `'server01', 'server02'`. To disable quoting, use the csv formatting option for variables:
 
 `${servers:csv}`
 
-Read more about variable formatting options in the [Variables]({{< relref "../../../dashboards/variables/variable-syntax#advanced-variable-format-options" >}}) documentation.
+Read more about variable formatting options in the [Variables][variable-syntax-advanced-variable-format-options] documentation.
+
+{{% docs/reference %}}
+[add-template-variables]: "/docs/grafana/ -> /docs/grafana/<GRAFANA VERSION>/dashboards/variables/add-template-variables"
+[add-template-variables]: "/docs/grafana-cloud/ -> /docs/grafana/<GRAFANA VERSION>/dashboards/variables/add-template-variables"
+
+[variable-syntax-advanced-variable-format-options]: "/docs/grafana/ -> /docs/grafana/<GRAFANA VERSION>/dashboards/variables/variable-syntax#advanced-variable-format-options"
+[variable-syntax-advanced-variable-format-options]: "/docs/grafana-cloud/ -> /docs/grafana/<GRAFANA VERSION>/dashboards/variables/variable-syntax#advanced-variable-format-options"
+
+[variables]: "/docs/grafana/ -> /docs/grafana/<GRAFANA VERSION>/dashboards/variables"
+[variables]: "/docs/grafana-cloud/ -> /docs/grafana/<GRAFANA VERSION>/dashboards/variables"
+{{% /docs/reference %}}

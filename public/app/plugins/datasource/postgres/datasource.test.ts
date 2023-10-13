@@ -1,4 +1,4 @@
-import { Observable, of, throwError } from 'rxjs';
+import { Observable, of } from 'rxjs';
 import { TestScheduler } from 'rxjs/testing';
 
 import {
@@ -7,8 +7,9 @@ import {
   DataQueryResponse,
   DataSourceInstanceSettings,
   dateTime,
+  FieldType,
   LoadingState,
-  MutableDataFrame,
+  createDataFrame,
 } from '@grafana/data';
 import { FetchResponse } from '@grafana/runtime';
 import { backendSrv } from 'app/core/services/backend_srv'; // will use the version in __mocks__
@@ -78,44 +79,6 @@ describe('PostgreSQLDatasource', () => {
     });
   };
 
-  describe('when performing testDatasource call', () => {
-    it('should return the error from the server', async () => {
-      setupTestContext(
-        undefined,
-        throwError(() => ({
-          status: 400,
-          statusText: 'Bad Request',
-          data: {
-            results: {
-              meta: {
-                error: 'db query error: pq: password authentication failed for user "postgres"',
-                frames: [
-                  {
-                    schema: {
-                      refId: 'meta',
-                      meta: {
-                        executedQueryString: 'SELECT 1',
-                      },
-                      fields: [],
-                    },
-                    data: {
-                      values: [],
-                    },
-                  },
-                ],
-              },
-            },
-          },
-        }))
-      );
-
-      const ds = new PostgresDatasource({ name: '', id: 0 } as DataSourceInstanceSettings<PostgresOptions>);
-      const result = await ds.testDatasource();
-      expect(result.status).toEqual('error');
-      expect(result.message).toEqual('db query error: pq: password authentication failed for user "postgres"');
-    });
-  });
-
   describe('When performing a time series query', () => {
     it('should transform response correctly', () => {
       const options: DataQueryRequest<SQLQuery> = {
@@ -150,7 +113,7 @@ describe('PostgreSQLDatasource', () => {
             refId: 'A',
             frames: [
               dataFrameToJSON(
-                new MutableDataFrame({
+                createDataFrame({
                   fields: [
                     { name: 'time', values: [1599643351085] },
                     { name: 'metric', values: [30.226249741223704], labels: { metric: 'America' } },
@@ -178,9 +141,7 @@ describe('PostgreSQLDatasource', () => {
                   entities: {},
                   name: 'time',
                   type: 'time',
-                  values: {
-                    buffer: [1599643351085],
-                  },
+                  values: [1599643351085],
                 },
                 {
                   config: {},
@@ -190,9 +151,7 @@ describe('PostgreSQLDatasource', () => {
                   },
                   name: 'metric',
                   type: 'number',
-                  values: {
-                    buffer: [30.226249741223704],
-                  },
+                  values: [30.226249741223704],
                 },
               ],
               length: 1,
@@ -245,7 +204,7 @@ describe('PostgreSQLDatasource', () => {
             refId: 'A',
             frames: [
               dataFrameToJSON(
-                new MutableDataFrame({
+                createDataFrame({
                   fields: [
                     { name: 'time', values: [1599643351085] },
                     { name: 'metric', values: ['America'] },
@@ -274,27 +233,21 @@ describe('PostgreSQLDatasource', () => {
                   entities: {},
                   name: 'time',
                   type: 'time',
-                  values: {
-                    buffer: [1599643351085],
-                  },
+                  values: [1599643351085],
                 },
                 {
                   config: {},
                   entities: {},
                   name: 'metric',
                   type: 'string',
-                  values: {
-                    buffer: ['America'],
-                  },
+                  values: ['America'],
                 },
                 {
                   config: {},
                   entities: {},
                   name: 'value',
                   type: 'number',
-                  values: {
-                    buffer: [30.226249741223704],
-                  },
+                  values: [30.226249741223704],
                 },
               ],
               length: 1,
@@ -341,6 +294,161 @@ describe('PostgreSQLDatasource', () => {
     });
   });
 
+  describe('When runSql returns an empty dataframe', () => {
+    let ds: PostgresDatasource;
+    const response = {
+      results: {
+        tempvar: {
+          refId: 'tempvar',
+          frames: [],
+        },
+      },
+    };
+
+    beforeEach(async () => {
+      ds = setupTestContext(response).ds;
+    });
+
+    it('should return an empty array when metricFindQuery is called', async () => {
+      const query = 'select * from atable';
+      const results = await ds.metricFindQuery(query);
+      expect(results.length).toBe(0);
+    });
+
+    it('should return an empty array when fetchTables is called', async () => {
+      const results = await ds.fetchTables();
+      expect(results.length).toBe(0);
+    });
+
+    it('should return empty string when getVersion is called', async () => {
+      const results = await ds.getVersion();
+      expect(results).toBe('');
+    });
+
+    it('should return undefined when getTimescaleDBVersion is called', async () => {
+      const results = await ds.getTimescaleDBVersion();
+      expect(results).toBe(undefined);
+    });
+
+    it('should return an empty array when fetchFields is called', async () => {
+      const query: SQLQuery = {
+        refId: 'refId',
+        table: 'schema.table',
+        dataset: 'dataset',
+      };
+      const results = await ds.fetchFields(query);
+      expect(results.length).toBe(0);
+    });
+  });
+
+  describe('When runSql returns a populated dataframe', () => {
+    it('should return a list of tables when fetchTables is called', async () => {
+      const fetchTableResponse = {
+        results: {
+          tables: {
+            refId: 'tables',
+            frames: [
+              dataFrameToJSON(
+                createDataFrame({
+                  fields: [{ name: 'table', type: FieldType.string, values: ['test1', 'test2', 'test3'] }],
+                })
+              ),
+            ],
+          },
+        },
+      };
+
+      const { ds } = setupTestContext(fetchTableResponse);
+
+      const results = await ds.fetchTables();
+      expect(results.length).toBe(3);
+      expect(results).toEqual(['test1', 'test2', 'test3']);
+    });
+
+    it('should return a version string when getVersion is called', async () => {
+      const fetchVersionResponse = {
+        results: {
+          meta: {
+            refId: 'meta',
+            frames: [
+              dataFrameToJSON(
+                createDataFrame({
+                  fields: [{ name: 'version', type: FieldType.string, values: ['test1'] }],
+                })
+              ),
+            ],
+          },
+        },
+      };
+
+      const { ds } = setupTestContext(fetchVersionResponse);
+
+      const version = await ds.getVersion();
+      expect(version).toBe('test1');
+    });
+
+    it('should return a version string when getTimescaleDBVersion is called', async () => {
+      const fetchVersionResponse = {
+        results: {
+          meta: {
+            refId: 'meta',
+            frames: [
+              dataFrameToJSON(
+                createDataFrame({
+                  fields: [{ name: 'extversion', type: FieldType.string, values: ['test1'] }],
+                })
+              ),
+            ],
+          },
+        },
+      };
+
+      const { ds } = setupTestContext(fetchVersionResponse);
+
+      const version = await ds.getTimescaleDBVersion();
+      expect(version).toBe('test1');
+    });
+
+    it('should return a list of fields when fetchFields is called', async () => {
+      const fetchFieldsResponse = {
+        results: {
+          columns: {
+            refId: 'columns',
+            frames: [
+              dataFrameToJSON(
+                createDataFrame({
+                  fields: [
+                    { name: 'column', type: FieldType.string, values: ['test1', 'test2', 'test3'] },
+                    { name: 'type', type: FieldType.string, values: ['int', 'char', 'bool'] },
+                  ],
+                })
+              ),
+            ],
+          },
+        },
+      };
+
+      const { ds } = setupTestContext(fetchFieldsResponse);
+
+      const sqlQuery: SQLQuery = {
+        refId: 'fields',
+        table: 'table',
+        dataset: 'dataset',
+      };
+      const results = await ds.fetchFields(sqlQuery);
+      expect(results.length).toBe(3);
+      expect(results[0].label).toBe('test1');
+      expect(results[0].value).toBe('test1');
+      expect(results[0].type).toBe('int');
+      expect(results[1].label).toBe('test2');
+      expect(results[1].value).toBe('test2');
+      expect(results[1].type).toBe('char');
+      expect(results[2].label).toBe('test3');
+      expect(results[2].value).toBe('test3');
+      expect(results[2].type).toBe('bool');
+    });
+  });
+
   describe('When performing metricFindQuery that returns multiple string fields', () => {
     it('should return list of all string field values', async () => {
       const query = 'select * from atable';
@@ -350,7 +458,7 @@ describe('PostgreSQLDatasource', () => {
             refId: 'tempvar',
             frames: [
               dataFrameToJSON(
-                new MutableDataFrame({
+                createDataFrame({
                   fields: [
                     { name: 'title', values: ['aTitle', 'aTitle2', 'aTitle3'] },
                     { name: 'text', values: ['some text', 'some text2', 'some text3'] },
@@ -383,7 +491,7 @@ describe('PostgreSQLDatasource', () => {
             refId: 'tempvar',
             frames: [
               dataFrameToJSON(
-                new MutableDataFrame({
+                createDataFrame({
                   fields: [
                     { name: 'title', values: ['aTitle', 'aTitle2', 'aTitle3'] },
                     { name: 'text', values: ['some text', 'some text2', 'some text3'] },
@@ -425,7 +533,7 @@ describe('PostgreSQLDatasource', () => {
             refId: 'tempvar',
             frames: [
               dataFrameToJSON(
-                new MutableDataFrame({
+                createDataFrame({
                   fields: [
                     { name: 'title', values: ['aTitle', 'aTitle2', 'aTitle3'] },
                     { name: 'text', values: ['some text', 'some text2', 'some text3'] },
@@ -465,7 +573,7 @@ describe('PostgreSQLDatasource', () => {
             refId: 'tempvar',
             frames: [
               dataFrameToJSON(
-                new MutableDataFrame({
+                createDataFrame({
                   fields: [
                     { name: '__value', values: ['value1', 'value2', 'value3'] },
                     { name: '__text', values: ['aTitle', 'aTitle2', 'aTitle3'] },
@@ -499,7 +607,7 @@ describe('PostgreSQLDatasource', () => {
             refId: 'tempvar',
             frames: [
               dataFrameToJSON(
-                new MutableDataFrame({
+                createDataFrame({
                   fields: [
                     { name: 'id', values: [1, 2, 3] },
                     { name: 'values', values: ['test1', 'test2', 'test3'] },
@@ -536,7 +644,7 @@ describe('PostgreSQLDatasource', () => {
             refId: 'tempvar',
             frames: [
               dataFrameToJSON(
-                new MutableDataFrame({
+                createDataFrame({
                   fields: [
                     { name: '__text', values: ['aTitle', 'aTitle', 'aTitle'] },
                     { name: '__value', values: ['same', 'same', 'diff'] },

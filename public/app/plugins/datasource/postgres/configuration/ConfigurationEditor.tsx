@@ -19,8 +19,10 @@ import {
   SecretInput,
   Link,
 } from '@grafana/ui';
+import { config } from 'app/core/config';
 import { ConnectionLimits } from 'app/features/plugins/sql/components/configuration/ConnectionLimits';
 import { TLSSecretsConfig } from 'app/features/plugins/sql/components/configuration/TLSSecretsConfig';
+import { useMigrateDatabaseFields } from 'app/features/plugins/sql/components/configuration/useMigrateDatabaseFields';
 
 import { PostgresOptions, PostgresTLSMethods, PostgresTLSModes, SecureJsonData } from '../types';
 
@@ -46,6 +48,8 @@ export const PostgresConfigEditor = (props: DataSourcePluginOptionsEditorProps<P
   const [versionOptions, setVersionOptions] = useState(postgresVersions);
 
   useAutoDetectFeatures({ props, setVersionOptions });
+
+  useMigrateDatabaseFields(props);
 
   const { options, onOptionsChange } = props;
   const jsonData = options.jsonData;
@@ -103,9 +107,9 @@ export const PostgresConfigEditor = (props: DataSourcePluginOptionsEditorProps<P
           <Input
             width={40}
             name="database"
-            value={options.database || ''}
+            value={jsonData.database || ''}
             placeholder="database name"
-            onChange={onDSOptionChanged('database')}
+            onChange={onUpdateDatasourceJsonDataOption(props, 'database')}
           ></Input>
         </InlineField>
         <InlineFieldRow>
@@ -163,6 +167,21 @@ export const PostgresConfigEditor = (props: DataSourcePluginOptionsEditorProps<P
         ) : null}
       </FieldSet>
 
+      {config.secureSocksDSProxyEnabled && (
+        <FieldSet label="Secure Socks Proxy">
+          <InlineField labelWidth={26} label="Enabled" tooltip="Connect to this datasource via the secure socks proxy.">
+            <InlineSwitch
+              value={options.jsonData.enableSecureSocksProxy ?? false}
+              onChange={(event) =>
+                onOptionsChange({
+                  ...options,
+                  jsonData: { ...options.jsonData, enableSecureSocksProxy: event!.currentTarget.checked },
+                })
+              }
+            />
+          </InlineField>
+        </FieldSet>
+      )}
       {jsonData.sslmode !== PostgresTLSModes.disable ? (
         <FieldSet label="TLS/SSL Auth Details">
           {jsonData.tlsConfigurationMethod === PostgresTLSMethods.fileContent ? (
@@ -227,13 +246,7 @@ export const PostgresConfigEditor = (props: DataSourcePluginOptionsEditorProps<P
         </FieldSet>
       ) : null}
 
-      <ConnectionLimits
-        labelWidth={labelWidthShort}
-        jsonData={jsonData}
-        onPropertyChanged={(property, value) => {
-          updateDatasourcePluginJsonDataOption(props, property, value);
-        }}
-      ></ConnectionLimits>
+      <ConnectionLimits labelWidth={labelWidthShort} options={options} onOptionsChange={onOptionsChange} />
 
       <FieldSet label="PostgreSQL details">
         <InlineField

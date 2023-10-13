@@ -1,9 +1,16 @@
 ---
+aliases:
+  - /docs/grafana/next/datasources/cloudmonitoring/
 description: Google authentication
 keywords:
   - grafana
   - google
   - authentication
+labels:
+  products:
+    - cloud
+    - enterprise
+    - oss
 title: Authentication
 weight: 5
 ---

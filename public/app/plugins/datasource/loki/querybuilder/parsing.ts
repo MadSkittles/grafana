@@ -7,6 +7,7 @@ import {
   Bool,
   By,
   ConvOp,
+  Decolorize,
   Filter,
   FilterOp,
   Grouping,
@@ -176,6 +177,11 @@ export function handleExpression(expr: string, node: SyntaxNode, context: Contex
       break;
     }
 
+    case Decolorize: {
+      visQuery.operations.push(getDecolorize());
+      break;
+    }
+
     case RangeAggregationExpr: {
       visQuery.operations.push(handleRangeAggregation(expr, node, context));
       break;
@@ -241,7 +247,7 @@ function getLineFilter(expr: string, node: SyntaxNode): { operation?: QueryBuild
       },
     };
   }
-  const mapFilter: any = {
+  const mapFilter: Record<string, LokiOperationId> = {
     '|=': LokiOperationId.LineContains,
     '!=': LokiOperationId.LineContainsNot,
     '|~': LokiOperationId.LineMatchesRegex,
@@ -368,6 +374,15 @@ function getLabelFormat(expr: string, node: SyntaxNode): QueryBuilderOperation {
   };
 }
 
+function getDecolorize(): QueryBuilderOperation {
+  const id = LokiOperationId.Decolorize;
+
+  return {
+    id,
+    params: [],
+  };
+}
+
 function handleUnwrapExpr(
   expr: string,
   node: SyntaxNode,
@@ -407,16 +422,18 @@ function handleUnwrapExpr(
 
   return {};
 }
+
 function handleRangeAggregation(expr: string, node: SyntaxNode, context: Context) {
   const nameNode = node.getChild(RangeOp);
   const funcName = getString(expr, nameNode);
   const number = node.getChild(NumberLezer);
   const logExpr = node.getChild(LogRangeExpr);
   const params = number !== null && number !== undefined ? [getString(expr, number)] : [];
+  const range = logExpr?.getChild(Range);
+  const rangeValue = range ? getString(expr, range) : null;
 
-  let match = getString(expr, node).match(/\[(.+)\]/);
-  if (match?.[1]) {
-    params.unshift(match[1]);
+  if (rangeValue) {
+    params.unshift(rangeValue.substring(1, rangeValue.length - 1));
   }
 
   const op = {
@@ -468,13 +485,13 @@ function handleVectorAggregation(expr: string, node: SyntaxNode, context: Contex
   return op;
 }
 
-const operatorToOpName = binaryScalarDefs.reduce((acc, def) => {
+const operatorToOpName = binaryScalarDefs.reduce<Record<string, { id: string; comparison?: boolean }>>((acc, def) => {
   acc[def.sign] = {
     id: def.id,
     comparison: def.comparison,
   };
   return acc;
-}, {} as Record<string, { id: string; comparison?: boolean }>);
+}, {});
 
 /**
  * Right now binary expressions can be represented in 2 way in visual query. As additional operation in case it is
@@ -573,9 +590,12 @@ function isIntervalVariableError(node: SyntaxNode) {
   return node?.parent?.type.id === Range;
 }
 
-function handleQuotes(string: string) {
+export function handleQuotes(string: string) {
   if (string[0] === `"` && string[string.length - 1] === `"`) {
-    return string.replace(/"/g, '').replace(/\\\\/g, '\\');
+    return string
+      .substring(1, string.length - 1)
+      .replace(/\\"/g, '"')
+      .replace(/\\\\/g, '\\');
   }
   return string.replace(/`/g, '');
 }

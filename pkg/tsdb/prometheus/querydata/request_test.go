@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"math"
 	"net/http"
@@ -13,16 +14,19 @@ import (
 	"github.com/grafana/grafana-plugin-sdk-go/backend"
 	sdkhttpclient "github.com/grafana/grafana-plugin-sdk-go/backend/httpclient"
 	"github.com/grafana/grafana-plugin-sdk-go/data"
-	"github.com/grafana/grafana/pkg/tsdb/prometheus/client"
 	apiv1 "github.com/prometheus/client_golang/api/prometheus/v1"
 	p "github.com/prometheus/common/model"
-	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/grafana/grafana/pkg/tsdb/prometheus/kinds/dataquery"
+
+	"github.com/grafana/kindsys"
 
 	"github.com/grafana/grafana/pkg/infra/httpclient"
 	"github.com/grafana/grafana/pkg/infra/log/logtest"
 	"github.com/grafana/grafana/pkg/infra/tracing"
 	"github.com/grafana/grafana/pkg/setting"
+	"github.com/grafana/grafana/pkg/tsdb/prometheus/client"
 	"github.com/grafana/grafana/pkg/tsdb/prometheus/models"
 	"github.com/grafana/grafana/pkg/tsdb/prometheus/querydata"
 )
@@ -66,9 +70,11 @@ func TestPrometheus_parseTimeSeriesResponse(t *testing.T) {
 		require.NoError(t, err)
 
 		qm := models.QueryModel{
-			LegendFormat:  "legend {{app}}",
-			UtcOffsetSec:  0,
-			ExemplarQuery: true,
+			LegendFormat: "legend {{app}}",
+			UtcOffsetSec: 0,
+			PrometheusDataQuery: dataquery.PrometheusDataQuery{
+				Exemplar: kindsys.Ptr(true),
+			},
 		}
 		b, err := json.Marshal(&qm)
 		require.NoError(t, err)
@@ -113,7 +119,9 @@ func TestPrometheus_parseTimeSeriesResponse(t *testing.T) {
 		qm := models.QueryModel{
 			LegendFormat: "legend {{app}}",
 			UtcOffsetSec: 0,
-			RangeQuery:   true,
+			PrometheusDataQuery: dataquery.PrometheusDataQuery{
+				Range: kindsys.Ptr(true),
+			},
 		}
 		b, err := json.Marshal(&qm)
 		require.NoError(t, err)
@@ -160,7 +168,9 @@ func TestPrometheus_parseTimeSeriesResponse(t *testing.T) {
 		qm := models.QueryModel{
 			LegendFormat: "",
 			UtcOffsetSec: 0,
-			RangeQuery:   true,
+			PrometheusDataQuery: dataquery.PrometheusDataQuery{
+				Range: kindsys.Ptr(true),
+			},
 		}
 		b, err := json.Marshal(&qm)
 		require.NoError(t, err)
@@ -203,7 +213,9 @@ func TestPrometheus_parseTimeSeriesResponse(t *testing.T) {
 		qm := models.QueryModel{
 			LegendFormat: "",
 			UtcOffsetSec: 0,
-			RangeQuery:   true,
+			PrometheusDataQuery: dataquery.PrometheusDataQuery{
+				Range: kindsys.Ptr(true),
+			},
 		}
 		b, err := json.Marshal(&qm)
 		require.NoError(t, err)
@@ -244,7 +256,9 @@ func TestPrometheus_parseTimeSeriesResponse(t *testing.T) {
 		qm := models.QueryModel{
 			LegendFormat: "",
 			UtcOffsetSec: 0,
-			RangeQuery:   true,
+			PrometheusDataQuery: dataquery.PrometheusDataQuery{
+				Range: kindsys.Ptr(true),
+			},
 		}
 		b, err := json.Marshal(&qm)
 		require.NoError(t, err)
@@ -279,7 +293,9 @@ func TestPrometheus_parseTimeSeriesResponse(t *testing.T) {
 		qm := models.QueryModel{
 			LegendFormat: "legend {{app}}",
 			UtcOffsetSec: 0,
-			InstantQuery: true,
+			PrometheusDataQuery: dataquery.PrometheusDataQuery{
+				Instant: kindsys.Ptr(true),
+			},
 		}
 		b, err := json.Marshal(&qm)
 		require.NoError(t, err)
@@ -318,7 +334,9 @@ func TestPrometheus_parseTimeSeriesResponse(t *testing.T) {
 		qm := models.QueryModel{
 			LegendFormat: "",
 			UtcOffsetSec: 0,
-			InstantQuery: true,
+			PrometheusDataQuery: dataquery.PrometheusDataQuery{
+				Instant: kindsys.Ptr(true),
+			},
 		}
 		b, err := json.Marshal(&qm)
 		require.NoError(t, err)
@@ -343,27 +361,6 @@ func TestPrometheus_parseTimeSeriesResponse(t *testing.T) {
 	})
 }
 
-func TestPrometheusCanonicalHeaders(t *testing.T) {
-	// Ensure headers are always canonicalized for all outgoing requests
-	b, err := json.Marshal(models.QueryModel{})
-	require.NoError(t, err)
-	query := backend.DataQuery{JSON: b}
-	tctx, err := setup(true)
-	require.NoError(t, err)
-	const idToken = "abc"
-	_, err = executeWithHeaders(tctx, query, queryResult{}, map[string]string{
-		"X-Id-Token": idToken,
-		"X-ID-Token": idToken,
-		"X-Other":    "thing",
-	})
-	require.NoError(t, err)
-	assert.NotEmpty(t, tctx.httpProvider.req.Header)
-	// Check the request that hit the fake prometheus server to ensure headers are valid
-	assert.Equal(t, []string{idToken}, tctx.httpProvider.req.Header["X-Id-Token"])
-	assert.Empty(t, tctx.httpProvider.req.Header["X-ID-Token"]) //nolint:staticcheck
-	assert.Equal(t, []string{"thing"}, tctx.httpProvider.req.Header["X-Other"])
-}
-
 type queryResult struct {
 	Type   p.ValueType `json:"resultType"`
 	Result interface{} `json:"result"`
@@ -376,6 +373,11 @@ func executeWithHeaders(tctx *testContext, query backend.DataQuery, qr interface
 	}
 
 	promRes, err := toAPIResponse(qr)
+	defer func() {
+		if err := promRes.Body.Close(); err != nil {
+			fmt.Println(fmt.Errorf("response body close error: %v", err))
+		}
+	}()
 	if err != nil {
 		return nil, err
 	}

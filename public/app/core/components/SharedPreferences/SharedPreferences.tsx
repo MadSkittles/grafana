@@ -1,16 +1,16 @@
 import { css } from '@emotion/css';
 import React, { PureComponent } from 'react';
 
-import { FeatureState, SelectableValue } from '@grafana/data';
+import { FeatureState, SelectableValue, getBuiltInThemes, ThemeRegistryItem } from '@grafana/data';
 import { selectors } from '@grafana/e2e-selectors';
-import { config } from '@grafana/runtime';
+import { config, reportInteraction } from '@grafana/runtime';
+import { Preferences as UserPreferencesDTO } from '@grafana/schema/src/raw/preferences/x/preferences_types.gen';
 import {
   Button,
   Field,
   FieldSet,
   Form,
   Label,
-  RadioButtonGroup,
   Select,
   stylesFactory,
   TimeZonePicker,
@@ -19,26 +19,21 @@ import {
 } from '@grafana/ui';
 import { DashboardPicker } from 'app/core/components/Select/DashboardPicker';
 import { t, Trans } from 'app/core/internationalization';
-import { LOCALES } from 'app/core/internationalization/constants';
+import { LANGUAGES } from 'app/core/internationalization/constants';
 import { PreferencesService } from 'app/core/services/PreferencesService';
-import { UserPreferencesDTO } from 'app/types';
+import { changeTheme } from 'app/core/services/theme';
 
 export interface Props {
   resourceUri: string;
   disabled?: boolean;
+  preferenceType: 'org' | 'team' | 'user';
   onConfirm?: () => Promise<boolean>;
 }
 
 export type State = UserPreferencesDTO;
 
-const themes: SelectableValue[] = [
-  { value: '', label: t('shared-preferences.theme.default-label', 'Default') },
-  { value: 'dark', label: t('shared-preferences.theme.dark-label', 'Dark') },
-  { value: 'light', label: t('shared-preferences.theme.light-label', 'Light') },
-];
-
 function getLanguageOptions(): Array<SelectableValue<string>> {
-  const languageOptions = LOCALES.map((v) => ({
+  const languageOptions = LANGUAGES.map((v) => ({
     value: v.code,
     label: v.name,
   }));
@@ -54,10 +49,9 @@ function getLanguageOptions(): Array<SelectableValue<string>> {
   return options;
 }
 
-const i18nFlag = Boolean(config.featureToggles.internationalization);
-
 export class SharedPreferences extends PureComponent<Props, State> {
   service: PreferencesService;
+  themeOptions: SelectableValue[];
 
   constructor(props: Props) {
     super(props);
@@ -67,9 +61,17 @@ export class SharedPreferences extends PureComponent<Props, State> {
       theme: '',
       timezone: '',
       weekStart: '',
-      locale: '',
+      language: '',
       queryHistory: { homeTab: '' },
     };
+
+    this.themeOptions = getBuiltInThemes(config.featureToggles.extraThemes).map((theme) => ({
+      value: theme.id,
+      label: getTranslatedThemeName(theme),
+    }));
+
+    // Add default option
+    this.themeOptions.unshift({ value: '', label: t('shared-preferences.theme.default-label', 'Default') });
   }
 
   async componentDidMount() {
@@ -80,7 +82,7 @@ export class SharedPreferences extends PureComponent<Props, State> {
       theme: prefs.theme,
       timezone: prefs.timezone,
       weekStart: prefs.weekStart,
-      locale: prefs.locale,
+      language: prefs.language,
       queryHistory: prefs.queryHistory,
     });
   }
@@ -89,18 +91,22 @@ export class SharedPreferences extends PureComponent<Props, State> {
     const confirmationResult = this.props.onConfirm ? await this.props.onConfirm() : true;
 
     if (confirmationResult) {
-      const { homeDashboardUID, theme, timezone, weekStart, locale, queryHistory } = this.state;
-      await this.service.update({ homeDashboardUID, theme, timezone, weekStart, locale, queryHistory });
+      const { homeDashboardUID, theme, timezone, weekStart, language, queryHistory } = this.state;
+      await this.service.update({ homeDashboardUID, theme, timezone, weekStart, language, queryHistory });
       window.location.reload();
     }
   };
 
-  onThemeChanged = (value: string) => {
-    this.setState({ theme: value });
+  onThemeChanged = (value: SelectableValue<string>) => {
+    this.setState({ theme: value.value });
+
+    if (value.value) {
+      changeTheme(value.value, true);
+    }
   };
 
   onTimeZoneChanged = (timezone?: string) => {
-    if (!timezone) {
+    if (typeof timezone !== 'string') {
       return;
     }
     this.setState({ timezone: timezone });
@@ -114,26 +120,33 @@ export class SharedPreferences extends PureComponent<Props, State> {
     this.setState({ homeDashboardUID: dashboardUID });
   };
 
-  onLocaleChanged = (locale: string) => {
-    this.setState({ locale });
+  onLanguageChanged = (language: string) => {
+    this.setState({ language });
+
+    reportInteraction('grafana_preferences_language_changed', {
+      toLanguage: language,
+      preferenceType: this.props.preferenceType,
+    });
   };
 
   render() {
-    const { theme, timezone, weekStart, homeDashboardUID, locale } = this.state;
+    const { theme, timezone, weekStart, homeDashboardUID, language } = this.state;
     const { disabled } = this.props;
     const styles = getStyles();
     const languages = getLanguageOptions();
+    const currentThemeOption = this.themeOptions.find((x) => x.value === theme) ?? this.themeOptions[0];
 
     return (
       <Form onSubmit={this.onSubmitForm}>
         {() => {
           return (
             <FieldSet label={<Trans i18nKey="shared-preferences.title">Preferences</Trans>} disabled={disabled}>
-              <Field label={t('shared-preferences.fields.theme-label', 'UI Theme')}>
-                <RadioButtonGroup
-                  options={themes}
-                  value={themes.find((item) => item.value === theme)?.value}
+              <Field label={t('shared-preferences.fields.theme-label', 'Interface theme')}>
+                <Select
+                  options={this.themeOptions}
+                  value={currentThemeOption}
                   onChange={this.onThemeChanged}
+                  inputId="shared-preferences-theme-select"
                 />
               </Field>
 
@@ -174,33 +187,31 @@ export class SharedPreferences extends PureComponent<Props, State> {
                 data-testid={selectors.components.WeekStartPicker.containerV2}
               >
                 <WeekStartPicker
-                  value={weekStart}
+                  value={weekStart || ''}
                   onChange={this.onWeekStartChanged}
                   inputId={'shared-preferences-week-start-picker'}
                 />
               </Field>
 
-              {i18nFlag ? (
-                <Field
-                  label={
-                    <Label htmlFor="locale-select">
-                      <span className={styles.labelText}>
-                        <Trans i18nKey="shared-preferences.fields.locale-label">Language</Trans>
-                      </span>
-                      <FeatureBadge featureState={FeatureState.beta} />
-                    </Label>
-                  }
-                  data-testid="User preferences language drop down"
-                >
-                  <Select
-                    value={languages.find((lang) => lang.value === locale)}
-                    onChange={(locale: SelectableValue<string>) => this.onLocaleChanged(locale.value ?? '')}
-                    options={languages}
-                    placeholder={t('shared-preferences.fields.locale-placeholder', 'Choose language')}
-                    inputId="locale-select"
-                  />
-                </Field>
-              ) : null}
+              <Field
+                label={
+                  <Label htmlFor="locale-select">
+                    <span className={styles.labelText}>
+                      <Trans i18nKey="shared-preferences.fields.locale-label">Language</Trans>
+                    </span>
+                    <FeatureBadge featureState={FeatureState.beta} />
+                  </Label>
+                }
+                data-testid="User preferences language drop down"
+              >
+                <Select
+                  value={languages.find((lang) => lang.value === language)}
+                  onChange={(lang: SelectableValue<string>) => this.onLanguageChanged(lang.value ?? '')}
+                  options={languages}
+                  placeholder={t('shared-preferences.fields.locale-placeholder', 'Choose language')}
+                  inputId="locale-select"
+                />
+              </Field>
 
               <div className="gf-form-button-row">
                 <Button
@@ -228,3 +239,16 @@ const getStyles = stylesFactory(() => {
     `,
   };
 });
+
+function getTranslatedThemeName(theme: ThemeRegistryItem) {
+  switch (theme.id) {
+    case 'dark':
+      return t('shared.preferences.theme.dark-label', 'Dark');
+    case 'light':
+      return t('shared.preferences.theme.light-label', 'Light');
+    case 'system':
+      return t('shared.preferences.theme.system-label', 'System preference');
+    default:
+      return theme.name;
+  }
+}

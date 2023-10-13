@@ -9,13 +9,16 @@ keywords:
   - panels
   - node graph
   - directed graph
+labels:
+  products:
+    - cloud
+    - enterprise
+    - oss
 title: Node graph
 weight: 850
 ---
 
 # Node graph panel
-
-> **Note:** This panel is currently in beta. Expect changes in future releases.
 
 The _Node graph_ can visualize directed graphs or networks. It uses a directed force layout to effectively position the nodes, so it can display complex infrastructure maps, hierarchies, or execution diagrams.
 
@@ -34,7 +37,9 @@ Both nodes and edges can have associated metadata or statistics. The data source
 
 ### Nodes
 
-> **Note:** Node graph can show only 1,500 nodes. If this limit is crossed a warning will be visible in upper right corner, and some nodes will be hidden. You can expand hidden parts of the graph by clicking on the "Hidden nodes" markers in the graph.
+{{% admonition type="note" %}}
+Node graph can show only 1,500 nodes. If this limit is crossed a warning will be visible in upper right corner, and some nodes will be hidden. You can expand hidden parts of the graph by clicking on the "Hidden nodes" markers in the graph.
+{{% /admonition %}}
 
 Usually, nodes show two statistical values inside the node and two identifiers just below the node, usually name and type. Nodes can also show another set of values as a color circle around the node, with sections of different color represents different values that should add up to 1.
 
@@ -84,28 +89,9 @@ Click on the node and select "Show in Graph layout" option to switch back to gra
 
 This visualization needs a specific shape of the data to be returned from the data source in order to correctly display it.
 
-Data source needs to return two data frames, one for nodes and one for edges. You have to set `frame.meta.preferredVisualisationType = 'nodeGraph'` on both data frames or name them `nodes` and `edges` respectively for the node graph to render.
+Node Graph at minimum requires a data frame describing the edges of the graph. By default, node graph will compute the nodes and any stats based on this data frame. Optionally a second data frame describing the nodes can be sent in case there is need to show more node specific metadata. You have to set `frame.meta.preferredVisualisationType = 'nodeGraph'` on both data frames or name them `nodes` and `edges` respectively for the node graph to render.
 
-### Node parameters
-
-Required fields:
-
-| Field name | Type   | Description                                                                                  |
-| ---------- | ------ | -------------------------------------------------------------------------------------------- |
-| id         | string | Unique identifier of the node. This ID is referenced by edge in its source and target field. |
-
-Optional fields:
-
-| Field name    | Type          | Description                                                                                                                                                                                    |
-| ------------- | ------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| title         | string        | Name of the node visible in just under the node.                                                                                                                                               |
-| subtitle      | string        | Additional, name, type or other identifier shown under the title.                                                                                                                              |
-| mainstat      | string/number | First stat shown inside the node itself. It can either be a string showing the value as is or a number. If it is a number, any unit associated with that field is also shown.                  |
-| secondarystat | string/number | Same as mainStat, but shown under it inside the node.                                                                                                                                          |
-| arc\_\_\*     | number        | Any field prefixed with `arc__` will be used to create the color circle around the node. All values in these fields should add up to 1. You can specify color using `config.color.fixedColor`. |
-| detail\_\_\*  | string/number | Any field prefixed with `detail__` will be shown in the header of context menu when clicked on the node. Use `config.displayName` for more human readable label.                               |
-
-### Edge parameters
+### Edges data frame structure
 
 Required fields:
 
@@ -122,3 +108,24 @@ Optional fields:
 | mainstat      | string/number | First stat shown in the overlay when hovering over the edge. It can be a string showing the value as is or it can be a number. If it is a number, any unit associated with that field is also shown |
 | secondarystat | string/number | Same as mainStat, but shown right under it.                                                                                                                                                         |
 | detail\_\_\*  | string/number | Any field prefixed with `detail__` will be shown in the header of context menu when clicked on the edge. Use `config.displayName` for more human readable label.                                    |
+
+### Nodes data frame structure
+
+Required fields:
+
+| Field name | Type   | Description                                                                                  |
+| ---------- | ------ | -------------------------------------------------------------------------------------------- |
+| id         | string | Unique identifier of the node. This ID is referenced by edge in its source and target field. |
+
+Optional fields:
+
+| Field name    | Type          | Description                                                                                                                                                                                                                                                                                                                                                               |
+| ------------- | ------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| title         | string        | Name of the node visible in just under the node.                                                                                                                                                                                                                                                                                                                          |
+| subtitle      | string        | Additional, name, type or other identifier shown under the title.                                                                                                                                                                                                                                                                                                         |
+| mainstat      | string/number | First stat shown inside the node itself. It can either be a string showing the value as is or a number. If it is a number, any unit associated with that field is also shown.                                                                                                                                                                                             |
+| secondarystat | string/number | Same as mainStat, but shown under it inside the node.                                                                                                                                                                                                                                                                                                                     |
+| arc\_\_\*     | number        | Any field prefixed with `arc__` will be used to create the color circle around the node. All values in these fields should add up to 1. You can specify color using `config.color.fixedColor`.                                                                                                                                                                            |
+| detail\_\_\*  | string/number | Any field prefixed with `detail__` will be shown in the header of context menu when clicked on the node. Use `config.displayName` for more human readable label.                                                                                                                                                                                                          |
+| color         | string/number | Can be used to specify a single color instead of using the `arc__` fields to specify color sections. It can be either a string which should then be an acceptable HTML color string or it can be a number in which case the behaviour depends on `field.config.color.mode` setting. This can be for example used to create gradient colors controlled by the field value. |
+| icon          | string        | Name of the icon to show inside the node instead of the default stats. Only Grafana built in icons are allowed (see the available icons [here](https://developers.grafana.com/ui/latest/index.html?path=/story/docs-overview-icon--icons-overview)).                                                                                                                      |

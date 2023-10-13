@@ -1,5 +1,4 @@
-import { within } from '@testing-library/dom';
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import React from 'react';
 import { Provider } from 'react-redux';
@@ -9,7 +8,7 @@ import { getGrafanaContextMock } from 'test/mocks/getGrafanaContextMock';
 import { GrafanaContext } from 'app/core/context/GrafanaContext';
 
 import { configureStore } from '../../../../store/configureStore';
-import { DashboardModel } from '../../state/DashboardModel';
+import { createDashboardModelFixture } from '../../state/__fixtures__/dashboardFixtures';
 import { historySrv } from '../VersionHistory/HistorySrv';
 
 import { VersionsSettings, VERSIONS_FETCH_LIMIT } from './VersionsSettings';
@@ -30,11 +29,11 @@ const queryByFullText = (text: string) =>
 
 function setup() {
   const store = configureStore();
-  const dashboard = new DashboardModel({
+  const dashboard = createDashboardModelFixture({
     id: 74,
     version: 11,
-    formatDate: jest.fn(() => 'date'),
-    getRelativeTime: jest.fn(() => 'time ago'),
+    // formatDate: jest.fn(() => 'date'),
+    // getRelativeTime: jest.fn(() => 'time ago'),
   });
 
   const sectionNav = {

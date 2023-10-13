@@ -6,12 +6,13 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/assert"
+
 	dashboardstore "github.com/grafana/grafana/pkg/services/dashboards"
 	"github.com/grafana/grafana/pkg/services/org"
 	"github.com/grafana/grafana/pkg/services/provisioning/dashboards"
 	"github.com/grafana/grafana/pkg/services/provisioning/utils"
 	"github.com/grafana/grafana/pkg/setting"
-	"github.com/stretchr/testify/assert"
 )
 
 func TestProvisioningServiceImpl(t *testing.T) {
@@ -39,7 +40,7 @@ func TestProvisioningServiceImpl(t *testing.T) {
 		serviceTest.waitForStop()
 
 		assert.False(t, serviceTest.serviceRunning, "Service should not be running")
-		assert.Equal(t, context.Canceled, serviceTest.serviceError, "Service should have returned canceled error")
+		assert.Nil(t, serviceTest.serviceError, "Service should not return canceled error")
 	})
 
 	t.Run("Failed reloading does not stop polling with old provisioned", func(t *testing.T) {

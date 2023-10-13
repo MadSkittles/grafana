@@ -1,26 +1,23 @@
 import { uniq } from 'lodash';
 import React from 'react';
-import { Redirect } from 'react-router-dom';
 
 import { OrgRole } from '@grafana/data';
-import { NavLandingPage } from 'app/core/components/AppChrome/NavLandingPage';
 import { SafeDynamicImport } from 'app/core/components/DynamicImports/SafeDynamicImport';
+import { NavLandingPage } from 'app/core/components/NavLandingPage/NavLandingPage';
 import { config } from 'app/core/config';
 import { RouteDescriptor } from 'app/core/navigation/types';
 import { AccessControlAction } from 'app/types';
 
 import { evaluateAccess } from './unified/utils/access-control';
 
-const commonRoutes: RouteDescriptor[] = [
-  {
-    path: '/alerting',
-    component: () =>
-      config.featureToggles.topnav ? <NavLandingPage navId="alerting" /> : <Redirect to="/alerting/list" />,
-  },
-];
+const commonRoutes: RouteDescriptor[] = [];
 
 const legacyRoutes: RouteDescriptor[] = [
   ...commonRoutes,
+  {
+    path: '/alerting',
+    component: () => <NavLandingPage navId="alerting-legacy" />,
+  },
   {
     path: '/alerting/list',
     component: SafeDynamicImport(
@@ -92,6 +89,12 @@ const legacyRoutes: RouteDescriptor[] = [
 const unifiedRoutes: RouteDescriptor[] = [
   ...commonRoutes,
   {
+    path: '/alerting',
+    component: SafeDynamicImport(
+      () => import(/* webpackChunkName: "AlertingHome" */ 'app/features/alerting/unified/Home')
+    ),
+  },
+  {
     path: '/alerting/list',
     roles: evaluateAccess(
       [AccessControlAction.AlertingRuleRead, AccessControlAction.AlertingRuleExternalRead],
@@ -108,7 +111,7 @@ const unifiedRoutes: RouteDescriptor[] = [
       [OrgRole.Editor, OrgRole.Admin]
     ),
     component: SafeDynamicImport(
-      () => import(/* webpackChunkName: "AlertAmRoutes" */ 'app/features/alerting/unified/AmRoutes')
+      () => import(/* webpackChunkName: "AlertAmRoutes" */ 'app/features/alerting/unified/NotificationPolicies')
     ),
   },
   {
@@ -192,6 +195,16 @@ const unifiedRoutes: RouteDescriptor[] = [
     ),
   },
   {
+    path: '/alerting/notifications/:type/:id/duplicate',
+    roles: evaluateAccess(
+      [AccessControlAction.AlertingNotificationsWrite, AccessControlAction.AlertingNotificationsExternalWrite],
+      ['Editor', 'Admin']
+    ),
+    component: SafeDynamicImport(
+      () => import(/* webpackChunkName: "NotificationsListPage" */ 'app/features/alerting/unified/Receivers')
+    ),
+  },
+  {
     path: '/alerting/notifications/:type',
     roles: evaluateAccess(
       [AccessControlAction.AlertingNotificationsWrite, AccessControlAction.AlertingNotificationsExternalWrite],
@@ -212,7 +225,7 @@ const unifiedRoutes: RouteDescriptor[] = [
     ),
   },
   {
-    path: '/alerting/new',
+    path: '/alerting/new/:type?',
     pageClass: 'page-alerting',
     roles: evaluateAccess(
       [AccessControlAction.AlertingRuleCreate, AccessControlAction.AlertingRuleExternalWrite],

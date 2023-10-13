@@ -1,4 +1,4 @@
-import produce from 'immer';
+import { produce } from 'immer';
 
 import {
   DataSourceApi,
@@ -18,19 +18,32 @@ import {
   AlertmanagerStatus,
   AlertState,
   GrafanaManagedReceiverConfig,
+  MatcherOperator,
   Silence,
   SilenceState,
 } from 'app/plugins/datasource/alertmanager/types';
 import { configureStore } from 'app/store/configureStore';
-import { AccessControlAction, FolderDTO, StoreState } from 'app/types';
-import { Alert, AlertingRule, CombinedRule, RecordingRule, RuleGroup, RuleNamespace } from 'app/types/unified-alerting';
+import { AccessControlAction, FolderDTO, NotifiersState, ReceiversState, StoreState } from 'app/types';
 import {
+  Alert,
+  AlertingRule,
+  CombinedRule,
+  CombinedRuleGroup,
+  CombinedRuleNamespace,
+  RecordingRule,
+  RuleGroup,
+  RuleNamespace,
+} from 'app/types/unified-alerting';
+import {
+  AlertQuery,
+  GrafanaAlertState,
   GrafanaAlertStateDecision,
   GrafanaRuleDefinition,
   PromAlertingRuleState,
   PromRuleType,
   RulerAlertingRuleDTO,
   RulerGrafanaRuleDTO,
+  RulerRecordingRuleDTO,
   RulerRuleGroupDTO,
   RulerRulesConfigDTO,
 } from 'app/types/unified-alerting-dto';
@@ -121,6 +134,19 @@ export const mockRulerAlertingRule = (partial: Partial<RulerAlertingRuleDTO> = {
   annotations: {
     summary: 'test alert',
   },
+  ...partial,
+});
+
+export const mockRulerRecordingRule = (partial: Partial<RulerRecordingRuleDTO> = {}): RulerAlertingRuleDTO => ({
+  alert: 'alert1',
+  expr: 'up = 1',
+  labels: {
+    severity: 'warning',
+  },
+  annotations: {
+    summary: 'test alert',
+  },
+  ...partial,
 });
 
 export const mockRulerRuleGroup = (partial: Partial<RulerRuleGroupDTO> = {}): RulerRuleGroupDTO => ({
@@ -128,6 +154,20 @@ export const mockRulerRuleGroup = (partial: Partial<RulerRuleGroupDTO> = {}): Ru
   rules: [mockRulerAlertingRule()],
   ...partial,
 });
+
+export const promRuleFromRulerRule = (
+  rulerRule: RulerAlertingRuleDTO,
+  override?: Partial<AlertingRule>
+): AlertingRule => {
+  return mockPromAlertingRule({
+    name: rulerRule.alert,
+    query: rulerRule.expr,
+    labels: rulerRule.labels,
+    annotations: rulerRule.annotations,
+    type: PromRuleType.Alerting,
+    ...override,
+  });
+};
 
 export const mockPromAlertingRule = (partial: Partial<AlertingRule> = {}): AlertingRule => {
   return {
@@ -145,7 +185,27 @@ export const mockPromAlertingRule = (partial: Partial<AlertingRule> = {}): Alert
     },
     state: PromAlertingRuleState.Firing,
     health: 'OK',
+    totalsFiltered: { alerting: 1 },
     ...partial,
+  };
+};
+
+export const mockGrafanaRulerRule = (partial: Partial<GrafanaRuleDefinition> = {}): RulerGrafanaRuleDTO => {
+  return {
+    for: '',
+    annotations: {},
+    labels: {},
+    grafana_alert: {
+      uid: '',
+      title: 'my rule',
+      namespace_uid: '',
+      namespace_id: 0,
+      condition: '',
+      no_data_state: GrafanaAlertStateDecision.NoData,
+      exec_err_state: GrafanaAlertStateDecision.Error,
+      data: [],
+      ...partial,
+    },
   };
 };
 
@@ -235,6 +295,31 @@ export const mockSilence = (partial: Partial<Silence> = {}): Silence => {
   };
 };
 
+export const mockNotifiersState = (partial: Partial<NotifiersState> = {}): NotifiersState => {
+  return {
+    email: [
+      {
+        name: 'email',
+        lastNotifyAttempt: new Date().toISOString(),
+        lastNotifyAttemptError: 'this is the error message',
+        lastNotifyAttemptDuration: '10s',
+      },
+    ],
+    ...partial,
+  };
+};
+
+export const mockReceiversState = (partial: Partial<ReceiversState> = {}): ReceiversState => {
+  return {
+    'broken-receiver': {
+      active: false,
+      errorCount: 1,
+      notifiers: mockNotifiersState(),
+    },
+    ...partial,
+  };
+};
+
 export class MockDataSourceSrv implements DataSourceSrv {
   datasources: Record<string, DataSourceApi> = {};
   // @ts-ignore
@@ -317,6 +402,12 @@ export const someGrafanaAlertManagerConfig: AlertManagerCortexConfig = {
   alertmanager_config: {
     route: {
       receiver: 'default',
+      routes: [
+        {
+          receiver: 'critical',
+          object_matchers: [['severity', MatcherOperator.equal, 'critical']],
+        },
+      ],
     },
     receivers: [
       {
@@ -443,16 +534,19 @@ export const mockCombinedRule = (partial?: Partial<CombinedRule>): CombinedRule 
   group: {
     name: 'mockCombinedRuleGroup',
     rules: [],
+    totals: {},
   },
   namespace: {
     name: 'mockCombinedNamespace',
-    groups: [{ name: 'mockCombinedRuleGroup', rules: [] }],
+    groups: [{ name: 'mockCombinedRuleGroup', rules: [], totals: {} }],
     rulesSource: 'grafana',
   },
   labels: {},
   annotations: {},
   promRule: mockPromAlertingRule(),
   rulerRule: mockRulerAlertingRule(),
+  instanceTotals: {},
+  filteredInstanceTotals: {},
   ...partial,
 });
 
@@ -467,6 +561,11 @@ export const mockFolder = (partial?: Partial<FolderDTO>): FolderDTO => {
     canDelete: true,
     canEdit: true,
     canSave: true,
+    created: '',
+    createdBy: '',
+    hasAcl: false,
+    updated: '',
+    updatedBy: '',
     ...partial,
   };
 };
@@ -516,16 +615,41 @@ export function mockStore(recipe: (state: StoreState) => void) {
   return configureStore(produce(defaultState, recipe));
 }
 
-export function getGrafanaRule(override?: Partial<CombinedRule>) {
+export function mockAlertQuery(query: Partial<AlertQuery>): AlertQuery {
+  return {
+    datasourceUid: '--uid--',
+    refId: 'A',
+    queryType: '',
+    model: { refId: 'A' },
+    ...query,
+  };
+}
+
+export function mockCombinedRuleGroup(name: string, rules: CombinedRule[]): CombinedRuleGroup {
+  return { name, rules, totals: {} };
+}
+
+export function mockCombinedRuleNamespace(namespace: Partial<CombinedRuleNamespace>): CombinedRuleNamespace {
+  return {
+    name: 'Grafana',
+    groups: [],
+    rulesSource: 'grafana',
+    ...namespace,
+  };
+}
+
+export function getGrafanaRule(override?: Partial<CombinedRule>, rulerOverride?: Partial<GrafanaRuleDefinition>) {
   return mockCombinedRule({
     namespace: {
       groups: [],
       name: 'Grafana',
       rulesSource: 'grafana',
     },
+    rulerRule: mockGrafanaRulerRule(rulerOverride),
     ...override,
   });
 }
+
 export function getCloudRule(override?: Partial<CombinedRule>) {
   return mockCombinedRule({
     namespace: {
@@ -537,4 +661,8 @@ export function getCloudRule(override?: Partial<CombinedRule>) {
     rulerRule: mockRulerAlertingRule(),
     ...override,
   });
+}
+
+export function mockAlertWithState(state: GrafanaAlertState, labels?: {}): Alert {
+  return { activeAt: '', annotations: {}, labels: labels || {}, state: state, value: '' };
 }

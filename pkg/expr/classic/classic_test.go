@@ -6,11 +6,12 @@ import (
 	"testing"
 	"time"
 
-	"github.com/stretchr/testify/require"
-	ptr "github.com/xorcare/pointer"
-
 	"github.com/grafana/grafana-plugin-sdk-go/data"
+	"github.com/stretchr/testify/require"
+
 	"github.com/grafana/grafana/pkg/expr/mathexp"
+	"github.com/grafana/grafana/pkg/infra/tracing"
+	"github.com/grafana/grafana/pkg/util"
 )
 
 func TestConditionsCmd(t *testing.T) {
@@ -26,7 +27,7 @@ func TestConditionsCmd(t *testing.T) {
 		vars: mathexp.Vars{
 			"A": mathexp.Results{
 				Values: []mathexp.Value{
-					newSeries(ptr.Float64(1), ptr.Float64(5)),
+					newSeries(util.Pointer(1.0), util.Pointer(5.0)),
 				},
 			},
 		},
@@ -40,7 +41,7 @@ func TestConditionsCmd(t *testing.T) {
 				},
 			}},
 		expected: func() mathexp.Results {
-			v := newNumber(ptr.Float64(0))
+			v := newNumber(util.Pointer(0.0))
 			v.SetMeta([]EvalMatch{})
 			return newResults(v)
 		},
@@ -51,7 +52,7 @@ func TestConditionsCmd(t *testing.T) {
 		vars: mathexp.Vars{
 			"A": mathexp.Results{
 				Values: []mathexp.Value{
-					newSeries(ptr.Float64(1), ptr.Float64(5)),
+					newSeries(util.Pointer(1.0), util.Pointer(5.0)),
 				},
 			},
 		},
@@ -65,8 +66,8 @@ func TestConditionsCmd(t *testing.T) {
 				},
 			}},
 		expected: func() mathexp.Results {
-			v := newNumber(ptr.Float64(1))
-			v.SetMeta([]EvalMatch{{Value: ptr.Float64(3)}})
+			v := newNumber(util.Pointer(1.0))
+			v.SetMeta([]EvalMatch{{Value: util.Pointer(3.0)}})
 			return newResults(v)
 		},
 	}, {
@@ -74,7 +75,7 @@ func TestConditionsCmd(t *testing.T) {
 		vars: mathexp.Vars{
 			"A": mathexp.Results{
 				Values: []mathexp.Value{
-					newSeries(ptr.Float64(1), ptr.Float64(5)),
+					newSeries(util.Pointer(1.0), util.Pointer(5.0)),
 				},
 			},
 		},
@@ -89,7 +90,7 @@ func TestConditionsCmd(t *testing.T) {
 			},
 		},
 		expected: func() mathexp.Results {
-			v := newNumber(ptr.Float64(0))
+			v := newNumber(util.Pointer(0.0))
 			v.SetMeta([]EvalMatch{})
 			return newResults(v)
 		},
@@ -98,7 +99,7 @@ func TestConditionsCmd(t *testing.T) {
 		vars: mathexp.Vars{
 			"A": mathexp.Results{
 				Values: []mathexp.Value{
-					newSeries(ptr.Float64(1), ptr.Float64(5)),
+					newSeries(util.Pointer(1.0), util.Pointer(5.0)),
 				},
 			},
 		},
@@ -113,8 +114,8 @@ func TestConditionsCmd(t *testing.T) {
 			},
 		},
 		expected: func() mathexp.Results {
-			v := newNumber(ptr.Float64(1))
-			v.SetMeta([]EvalMatch{{Value: ptr.Float64(4)}})
+			v := newNumber(util.Pointer(1.0))
+			v.SetMeta([]EvalMatch{{Value: util.Pointer(4.0)}})
 			return newResults(v)
 		},
 	}, {
@@ -203,9 +204,8 @@ func TestConditionsCmd(t *testing.T) {
 			},
 		},
 		expected: func() mathexp.Results {
-			v := newNumber(nil)
-			// This seems incorrect
-			v.SetMeta([]EvalMatch{{}, {Metric: "NoData"}})
+			v := newNumber(util.Pointer(1.0))
+			v.SetMeta([]EvalMatch{{Value: nil}})
 			return newResults(v)
 		},
 	}, {
@@ -226,9 +226,8 @@ func TestConditionsCmd(t *testing.T) {
 			},
 		},
 		expected: func() mathexp.Results {
-			v := newNumber(nil)
-			// This too seems incorrect, looks like we don't call the evaluator
-			v.SetMeta([]EvalMatch{{Metric: "NoData"}})
+			v := newNumber(util.Pointer(1.0))
+			v.SetMeta([]EvalMatch{{Value: nil}})
 			return newResults(v)
 		},
 	}, {
@@ -251,9 +250,8 @@ func TestConditionsCmd(t *testing.T) {
 			},
 		},
 		expected: func() mathexp.Results {
-			v := newNumber(nil)
-			// This seems incorrect
-			v.SetMeta([]EvalMatch{{}, {Metric: "NoData"}})
+			v := newNumber(util.Pointer(1.0))
+			v.SetMeta([]EvalMatch{{Value: nil}})
 			return newResults(v)
 		},
 	}, {
@@ -264,7 +262,7 @@ func TestConditionsCmd(t *testing.T) {
 			"A": mathexp.Results{
 				Values: []mathexp.Value{
 					newSeries(),
-					newSeries(ptr.Float64(2)),
+					newSeries(util.Pointer(2.0)),
 				},
 			},
 		},
@@ -278,8 +276,8 @@ func TestConditionsCmd(t *testing.T) {
 				},
 			}},
 		expected: func() mathexp.Results {
-			v := newNumber(ptr.Float64(1))
-			v.SetMeta([]EvalMatch{{Value: ptr.Float64(2)}})
+			v := newNumber(util.Pointer(1.0))
+			v.SetMeta([]EvalMatch{{Value: util.Pointer(2.0)}})
 			return newResults(v)
 		},
 	}, {
@@ -287,8 +285,8 @@ func TestConditionsCmd(t *testing.T) {
 		vars: mathexp.Vars{
 			"A": mathexp.Results{
 				Values: []mathexp.Value{
-					newSeries(ptr.Float64(1), ptr.Float64(5)),
-					newSeries(ptr.Float64(2), ptr.Float64(10)),
+					newSeries(util.Pointer(1.0), util.Pointer(5.0)),
+					newSeries(util.Pointer(2.0), util.Pointer(10.0)),
 				},
 			},
 		},
@@ -302,7 +300,7 @@ func TestConditionsCmd(t *testing.T) {
 				},
 			}},
 		expected: func() mathexp.Results {
-			v := newNumber(ptr.Float64(0))
+			v := newNumber(util.Pointer(0.0))
 			v.SetMeta([]EvalMatch{})
 			return mathexp.Results{Values: mathexp.Values{v}}
 		},
@@ -311,8 +309,8 @@ func TestConditionsCmd(t *testing.T) {
 		vars: mathexp.Vars{
 			"A": mathexp.Results{
 				Values: []mathexp.Value{
-					newSeries(ptr.Float64(1), ptr.Float64(5)),
-					newSeriesWithLabels(data.Labels{"foo": "bar"}, ptr.Float64(2), ptr.Float64(10)),
+					newSeries(util.Pointer(1.0), util.Pointer(5.0)),
+					newSeriesWithLabels(data.Labels{"foo": "bar"}, util.Pointer(2.0), util.Pointer(10.0)),
 				},
 			},
 		},
@@ -326,8 +324,8 @@ func TestConditionsCmd(t *testing.T) {
 				},
 			}},
 		expected: func() mathexp.Results {
-			v := newNumber(ptr.Float64(1))
-			v.SetMeta([]EvalMatch{{Value: ptr.Float64(2), Labels: data.Labels{"foo": "bar"}}})
+			v := newNumber(util.Pointer(1.0))
+			v.SetMeta([]EvalMatch{{Value: util.Pointer(2.0), Labels: data.Labels{"foo": "bar"}}})
 			return newResults(v)
 		},
 	}, {
@@ -335,8 +333,8 @@ func TestConditionsCmd(t *testing.T) {
 		vars: mathexp.Vars{
 			"A": mathexp.Results{
 				Values: []mathexp.Value{
-					newSeries(ptr.Float64(1), ptr.Float64(5)),
-					newSeriesWithLabels(data.Labels{"foo": "bar"}, ptr.Float64(2), ptr.Float64(10)),
+					newSeries(util.Pointer(1.0), util.Pointer(5.0)),
+					newSeriesWithLabels(data.Labels{"foo": "bar"}, util.Pointer(2.0), util.Pointer(10.0)),
 				},
 			},
 		},
@@ -350,11 +348,11 @@ func TestConditionsCmd(t *testing.T) {
 				},
 			}},
 		expected: func() mathexp.Results {
-			v := newNumber(ptr.Float64(1))
+			v := newNumber(util.Pointer(1.0))
 			v.SetMeta([]EvalMatch{{
-				Value: ptr.Float64(1),
+				Value: util.Pointer(1.0),
 			}, {
-				Value:  ptr.Float64(2),
+				Value:  util.Pointer(2.0),
 				Labels: data.Labels{"foo": "bar"},
 			}})
 			return newResults(v)
@@ -364,7 +362,7 @@ func TestConditionsCmd(t *testing.T) {
 		vars: mathexp.Vars{
 			"A": mathexp.Results{
 				Values: []mathexp.Value{
-					newSeries(ptr.Float64(1), ptr.Float64(5)),
+					newSeries(util.Pointer(1.0), util.Pointer(5.0)),
 				},
 			},
 		},
@@ -383,8 +381,8 @@ func TestConditionsCmd(t *testing.T) {
 				},
 			}},
 		expected: func() mathexp.Results {
-			v := newNumber(ptr.Float64(1))
-			v.SetMeta([]EvalMatch{{Value: ptr.Float64(5)}})
+			v := newNumber(util.Pointer(1.0))
+			v.SetMeta([]EvalMatch{{Value: util.Pointer(5.0)}})
 			return newResults(v)
 		},
 	}, {
@@ -392,7 +390,7 @@ func TestConditionsCmd(t *testing.T) {
 		vars: mathexp.Vars{
 			"A": mathexp.Results{
 				Values: []mathexp.Value{
-					newSeries(ptr.Float64(1), ptr.Float64(5)),
+					newSeries(util.Pointer(1.0), util.Pointer(5.0)),
 				},
 			},
 		},
@@ -411,8 +409,8 @@ func TestConditionsCmd(t *testing.T) {
 				},
 			}},
 		expected: func() mathexp.Results {
-			v := newNumber(ptr.Float64(1))
-			v.SetMeta([]EvalMatch{{Value: ptr.Float64(1)}})
+			v := newNumber(util.Pointer(1.0))
+			v.SetMeta([]EvalMatch{{Value: util.Pointer(1.0)}})
 			return newResults(v)
 		},
 	}, {
@@ -420,7 +418,7 @@ func TestConditionsCmd(t *testing.T) {
 		vars: mathexp.Vars{
 			"A": mathexp.Results{
 				Values: []mathexp.Value{
-					newSeries(ptr.Float64(1), ptr.Float64(5)),
+					newSeries(util.Pointer(1.0), util.Pointer(5.0)),
 				},
 			},
 		},
@@ -439,8 +437,8 @@ func TestConditionsCmd(t *testing.T) {
 				},
 			}},
 		expected: func() mathexp.Results {
-			v := newNumber(ptr.Float64(1))
-			v.SetMeta([]EvalMatch{{Value: ptr.Float64(5)}, {Value: ptr.Float64(1)}})
+			v := newNumber(util.Pointer(1.0))
+			v.SetMeta([]EvalMatch{{Value: util.Pointer(5.0)}, {Value: util.Pointer(1.0)}})
 			return newResults(v)
 		},
 	}, {
@@ -448,9 +446,9 @@ func TestConditionsCmd(t *testing.T) {
 		vars: mathexp.Vars{
 			"A": mathexp.Results{
 				Values: []mathexp.Value{
-					newNumber(ptr.Float64(5)),
-					newNumber(ptr.Float64(10)),
-					newNumber(ptr.Float64(15)),
+					newNumber(util.Pointer(5.0)),
+					newNumber(util.Pointer(10.0)),
+					newNumber(util.Pointer(15.0)),
 				},
 			},
 		},
@@ -465,19 +463,143 @@ func TestConditionsCmd(t *testing.T) {
 			},
 		},
 		expected: func() mathexp.Results {
-			v := newNumber(ptr.Float64(1))
+			v := newNumber(util.Pointer(1.0))
 			v.SetMeta([]EvalMatch{
-				{Value: ptr.Float64(5)},
-				{Value: ptr.Float64(10)},
-				{Value: ptr.Float64(15)},
+				{Value: util.Pointer(5.0)},
+				{Value: util.Pointer(10.0)},
+				{Value: util.Pointer(15.0)},
 			})
+			return newResults(v)
+		},
+	}, {
+		name: "two queries with two conditions using and operator and first is No Data",
+		vars: mathexp.Vars{
+			"A": mathexp.Results{
+				Values: []mathexp.Value{mathexp.NoData{}.New()},
+			},
+			"B": mathexp.Results{
+				Values: []mathexp.Value{newSeries(util.Pointer(5.0))},
+			},
+		},
+		cmd: &ConditionsCmd{
+			Conditions: []condition{
+				{
+					InputRefID: "A",
+					Reducer:    reducer("min"),
+					Operator:   "and",
+					Evaluator:  &thresholdEvaluator{"gt", 1},
+				},
+				{
+					InputRefID: "B",
+					Reducer:    reducer("min"),
+					Operator:   "and",
+					Evaluator:  &thresholdEvaluator{"gt", 1},
+				},
+			},
+		},
+		expected: func() mathexp.Results {
+			v := newNumber(util.Pointer(0.0))
+			v.SetMeta([]EvalMatch{{Metric: "NoData"}, {Value: util.Pointer(5.0)}})
+			return newResults(v)
+		},
+	}, {
+		name: "two queries with two conditions using and operator and last is No Data",
+		vars: mathexp.Vars{
+			"A": mathexp.Results{
+				Values: []mathexp.Value{newSeries(util.Pointer(5.0))},
+			},
+			"B": mathexp.Results{
+				Values: []mathexp.Value{mathexp.NoData{}.New()},
+			},
+		},
+		cmd: &ConditionsCmd{
+			Conditions: []condition{
+				{
+					InputRefID: "A",
+					Reducer:    reducer("min"),
+					Operator:   "and",
+					Evaluator:  &thresholdEvaluator{"gt", 1},
+				},
+				{
+					InputRefID: "B",
+					Reducer:    reducer("min"),
+					Operator:   "and",
+					Evaluator:  &thresholdEvaluator{"gt", 1},
+				},
+			},
+		},
+		expected: func() mathexp.Results {
+			v := newNumber(util.Pointer(0.0))
+			v.SetMeta([]EvalMatch{{Value: util.Pointer(5.0)}, {Metric: "NoData"}})
+			return newResults(v)
+		},
+	}, {
+		name: "two queries with two conditions using or operator and first is No Data",
+		vars: mathexp.Vars{
+			"A": mathexp.Results{
+				Values: []mathexp.Value{mathexp.NoData{}.New()},
+			},
+			"B": mathexp.Results{
+				Values: []mathexp.Value{newSeries(util.Pointer(5.0))},
+			},
+		},
+		cmd: &ConditionsCmd{
+			Conditions: []condition{
+				{
+					InputRefID: "A",
+					Reducer:    reducer("min"),
+					Operator:   "or",
+					Evaluator:  &thresholdEvaluator{"gt", 1},
+				},
+				{
+					InputRefID: "B",
+					Reducer:    reducer("min"),
+					Operator:   "or",
+					Evaluator:  &thresholdEvaluator{"gt", 1},
+				},
+			},
+		},
+		expected: func() mathexp.Results {
+			v := newNumber(nil)
+			v.SetMeta([]EvalMatch{{Metric: "NoData"}, {Value: util.Pointer(5.0)}})
+			return newResults(v)
+		},
+	}, {
+		name: "two queries with two conditions using or operator and last is No Data",
+		vars: mathexp.Vars{
+			"A": mathexp.Results{
+				Values: []mathexp.Value{newSeries(util.Pointer(5.0))},
+			},
+			"B": mathexp.Results{
+				Values: []mathexp.Value{mathexp.NoData{}.New()},
+			},
+		},
+		cmd: &ConditionsCmd{
+			Conditions: []condition{
+				{
+					InputRefID: "A",
+					Reducer:    reducer("min"),
+					Operator:   "or",
+					Evaluator:  &thresholdEvaluator{"gt", 1},
+				},
+				{
+					InputRefID: "B",
+					Reducer:    reducer("min"),
+					Operator:   "or",
+					Evaluator:  &thresholdEvaluator{"gt", 1},
+				},
+			},
+		},
+		expected: func() mathexp.Results {
+			v := newNumber(nil)
+			v.SetMeta([]EvalMatch{{Value: util.Pointer(5.0)}, {Metric: "NoData"}})
 			return newResults(v)
 		},
 	}}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			res, err := tt.cmd.Execute(context.Background(), time.Now(), tt.vars)
+			res, err := tt.cmd.Execute(context.Background(), time.Now(), tt.vars, tracing.NewFakeTracer())
 			require.NoError(t, err)
 			require.Equal(t, tt.expected(), res)
 		})
