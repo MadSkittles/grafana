@@ -21,6 +21,10 @@ Organization administrators can invite users to join their organization. Organiz
 
 For more information about organization user permissions, refer to [Organization users and permissions]({{< relref "../../roles-and-permissions/#organization-users-and-permissions" >}}).
 
+{{% admonition type="note" %}}
+Users added at the organization level will have access to all stacks and services by default, without the ability to be filtered by stack unless Single Sign-On (SSO) or Role-Based Access Control (RBAC) is implemented.
+{{% /admonition %}}
+
 {{< section >}}
 
 ## View a list of organization users
@@ -70,7 +74,7 @@ If you have [server administrator]({{< relref "../../roles-and-permissions/#graf
 
 ## Invite a user to join an organization
 
-When you invite users to join an organization, you assign the **Admin**, **Editor**, or **Viewer** role which controls user access to the dashboards and data sources owned by the organization. Users receive an email that prompts them to accept the invitation.
+When you invite users to join an organization, you assign the **Admin**, **Editor**, or **Viewer** role, or select **No basic role**. Organization roles control user access to resources, such as dashboards and data sources, owned by the organization. Users receive an email that prompts them to accept the invitation.
 
 - If you know that the user already has access Grafana and you know their user name, then you issue an invitation by entering their user name.
 - If the user is new to Grafana, then use their email address to issue an invitation. The system automatically creates the user account on first sign in.

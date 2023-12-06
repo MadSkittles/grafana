@@ -255,7 +255,7 @@ function GrafanaRuleUID({ rule }: { rule: GrafanaRuleDefinition }) {
 
   return (
     <DetailsField label="Rule UID" childrenWrapperClassName={styles.ruleUid}>
-      {rule.uid} <IconButton name="copy" onClick={copyUID} tooltip="Copy rule" />
+      {rule.uid} <IconButton name="copy" onClick={copyUID} tooltip="Copy rule UID" />
     </DetailsField>
   );
 }
@@ -276,7 +276,7 @@ const getStyles = (theme: GrafanaTheme2) => {
     collapse: css`
       margin-top: ${theme.spacing(2)};
       border-color: ${theme.colors.border.weak};
-      border-radius: ${theme.shape.borderRadius()};
+      border-radius: ${theme.shape.radius.default};
     `,
     queriesTitle: css`
       padding: ${theme.spacing(2, 0.5)};

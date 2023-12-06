@@ -1,6 +1,6 @@
 import { dateTime } from '@grafana/data';
 import { faro, LogLevel as GrafanaLogLevel } from '@grafana/faro-web-sdk';
-import { getBackendSrv } from '@grafana/runtime';
+import { getBackendSrv, logError } from '@grafana/runtime';
 import { config, reportInteraction } from '@grafana/runtime/src';
 import { contextSrv } from 'app/core/core';
 
@@ -27,6 +27,10 @@ export function logInfo(message: string, context: Record<string, string | number
       context: { ...context, module: 'Alerting' },
     });
   }
+}
+
+export function logAlertingError(error: Error, context: Record<string, string | number> = {}) {
+  logError(error, { ...context, module: 'Alerting' });
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -98,6 +102,15 @@ export const trackNewAlerRuleFormError = async (props: AlertRuleTrackingProps & 
     return;
   }
   reportInteraction('grafana_alerting_rule_form_error', props);
+};
+
+export const trackInsightsFeedback = async (props: { useful: boolean; panel: string }) => {
+  const defaults = {
+    grafana_version: config.buildInfo.version,
+    org_id: contextSrv.user.orgId,
+    user_id: contextSrv.user.id,
+  };
+  reportInteraction('grafana_alerting_insights', { ...defaults, ...props });
 };
 
 export type AlertRuleTrackingProps = {

@@ -1,13 +1,15 @@
 import { css } from '@emotion/css';
-import React, { createElement, CSSProperties, useCallback } from 'react';
+import React, { createElement, CSSProperties, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react';
+import ReactDomServer from 'react-dom/server';
 
 import { GrafanaTheme2, ThemeTypographyVariantTypes } from '@grafana/data';
 
 import { useStyles2 } from '../../themes';
+import { Tooltip } from '../Tooltip/Tooltip';
 
 import { customWeight, customColor, customVariant } from './utils';
 
-export interface TextProps {
+export interface TextProps extends Omit<React.HTMLAttributes<HTMLElement>, 'className' | 'style'> {
   /** Defines what HTML element is defined underneath. "span" by default */
   element?: 'h1' | 'h2' | 'h3' | 'h4' | 'h5' | 'h6' | 'span' | 'p';
   /** What typograpy variant should be used for the component. Only use if default variant for the defined element is not what is needed */
@@ -22,26 +24,76 @@ export interface TextProps {
   italic?: boolean;
   /** Whether to align the text to left, center or right */
   textAlignment?: CSSProperties['textAlign'];
-  children: React.ReactNode;
+  children: NonNullable<React.ReactNode>;
 }
 
 export const Text = React.forwardRef<HTMLElement, TextProps>(
-  ({ element = 'span', variant, weight, color, truncate, italic, textAlignment, children }, ref) => {
-    const styles = useStyles2(
-      useCallback(
-        (theme) => getTextStyles(theme, element, variant, color, weight, truncate, italic, textAlignment),
-        [color, textAlignment, truncate, italic, weight, variant, element]
-      )
-    );
+  ({ element = 'span', variant, weight, color, truncate, italic, textAlignment, children, ...restProps }, ref) => {
+    const styles = useStyles2(getTextStyles, element, variant, color, weight, truncate, italic, textAlignment);
+    const [isOverflowing, setIsOverflowing] = useState(false);
+    const internalRef = useRef<HTMLElement>(null);
 
-    return createElement(
+    // wire up the forwarded ref to the internal ref
+    useImperativeHandle<HTMLElement | null, HTMLElement | null>(ref, () => internalRef.current);
+
+    const childElement = createElement(
       element,
       {
+        ...restProps,
+        style: undefined, // remove style prop to avoid overriding the styles
         className: styles,
-        ref,
+        // when overflowing, the internalRef is passed to the tooltip which forwards it on to the child element
+        ref: isOverflowing ? undefined : internalRef,
       },
       children
     );
+
+    const resizeObserver = useMemo(
+      () =>
+        new ResizeObserver((entries) => {
+          for (const entry of entries) {
+            if (entry.target.clientWidth && entry.target.scrollWidth) {
+              if (entry.target.scrollWidth > entry.target.clientWidth) {
+                setIsOverflowing(true);
+              }
+              if (entry.target.scrollWidth <= entry.target.clientWidth) {
+                setIsOverflowing(false);
+              }
+            }
+          }
+        }),
+      []
+    );
+
+    useEffect(() => {
+      const { current } = internalRef;
+      if (current && truncate) {
+        resizeObserver.observe(current);
+      }
+      return () => {
+        resizeObserver.disconnect();
+      };
+    }, [isOverflowing, resizeObserver, truncate]);
+
+    const getTooltipText = (children: NonNullable<React.ReactNode>) => {
+      if (typeof children === 'string') {
+        return children;
+      }
+      const html = ReactDomServer.renderToStaticMarkup(<>{children}</>);
+      const getRidOfTags = html.replace(/(<([^>]+)>)/gi, '');
+      return getRidOfTags;
+    };
+    // A 'span' is an inline element therefore it can't be truncated
+    // and it should be wrapped in a parent element that is the one that will show the tooltip
+    if (truncate && isOverflowing && element !== 'span') {
+      return (
+        <Tooltip ref={internalRef} content={getTooltipText(children)}>
+          {childElement}
+        </Tooltip>
+      );
+    } else {
+      return childElement;
+    }
   }
 );
 

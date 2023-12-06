@@ -3,13 +3,12 @@ import { connect, ConnectedProps } from 'react-redux';
 import { useAsyncFn } from 'react-use';
 
 import { renderMarkdown } from '@grafana/data';
-import { selectors as e2eSelectors } from '@grafana/e2e-selectors/src';
 import { getBackendSrv } from '@grafana/runtime';
-import { HorizontalGroup, Pagination, VerticalGroup } from '@grafana/ui';
 import { Page } from 'app/core/components/Page/Page';
 import { contextSrv } from 'app/core/core';
 import { OrgUser, OrgRole, StoreState } from 'app/types';
 
+import { OrgUsersTable } from '../admin/Users/OrgUsersTable';
 import InviteesTable from '../invites/InviteesTable';
 import { fetchInvitees } from '../invites/state/actions';
 import { selectInvitesMatchingQuery } from '../invites/state/selectors';
@@ -18,8 +17,7 @@ import { fetchJoinRequesters } from '../joinRequests/state/actions';
 import { selectJoinRequestersMatchingQuery } from '../joinRequests/state/selectors';
 
 import { UsersActionBar } from './UsersActionBar';
-import { UsersTable } from './UsersTable';
-import { loadUsers, removeUser, updateUser, changePage } from './state/actions';
+import { loadUsers, removeUser, updateUser, changePage, changeSort } from './state/actions';
 import { getUsers, getUsersSearchQuery } from './state/selectors';
 
 function mapStateToProps(state: StoreState) {
@@ -34,6 +32,7 @@ function mapStateToProps(state: StoreState) {
     joinRequesters: selectJoinRequestersMatchingQuery(state.joinRequests, searchQuery),
     externalUserMngInfo: state.users.externalUserMngInfo,
     isLoading: state.users.isLoading,
+    rolesLoading: state.users.rolesLoading,
   };
 }
 
@@ -42,6 +41,7 @@ const mapDispatchToProps = {
   fetchInvitees,
   fetchJoinRequesters,
   changePage,
+  changeSort,
   updateUser,
   removeUser,
 };
@@ -54,8 +54,6 @@ export interface State {
   showUserTypes: string;
 }
 
-const selectors = e2eSelectors.pages.UserListPage.UsersListPage;
-
 export const UsersListPageUnconnected = ({
   users,
   page,
@@ -64,13 +62,15 @@ export const UsersListPageUnconnected = ({
   joinRequesters,
   externalUserMngInfo,
   isLoading,
+  rolesLoading,
   loadUsers,
   fetchInvitees,
   fetchJoinRequesters,
   changePage,
   updateUser,
   removeUser,
-}: Props): JSX.Element => {
+  changeSort,
+}: Props) => {
   const [showUserTypes, setshowUserTypes] = useState("users");
   const [activeOrg, fetchOrg] = useAsyncFn(async () =>{ return await getBackendSrv().get(`/api/orgs/${contextSrv.user.orgId}`)}, []);
   const externalUserMngInfoHtml = externalUserMngInfo ? renderMarkdown(externalUserMngInfo) : '';
@@ -85,6 +85,8 @@ export const UsersListPageUnconnected = ({
   const onRoleChange = (role: OrgRole, user: OrgUser) => {
     updateUser({ ...user, role: role });
   };
+
+  const onRemoveUser = (user: OrgUser) => removeUser(user.userId);
 
   const onShowUserTypes = (value: string) => {
     setshowUserTypes(value);
@@ -107,22 +109,17 @@ export const UsersListPageUnconnected = ({
       return <JoinRequestersTable joinRequesters={joinRequesters} org={activeOrg} onSwitch={onSwitchAutoApproveJoinRequests}/>
     } else {
       return (
-        <VerticalGroup spacing="md" data-testid={selectors.container}>
-          <UsersTable
-            users={users}
-            orgId={contextSrv.user.orgId}
-            onRoleChange={(role, user) => onRoleChange(role, user)}
-            onRemoveUser={(user) => removeUser(user.userId)}
-          />
-          <HorizontalGroup justify="flex-end">
-            <Pagination
-              onNavigate={changePage}
-              currentPage={page}
-              numberOfPages={totalPages}
-              hideWhenSinglePage={true}
-            />
-          </HorizontalGroup>
-        </VerticalGroup>
+        <OrgUsersTable
+          users={users}
+          orgId={contextSrv.user.orgId}
+          rolesLoading={rolesLoading}
+          onRoleChange={onRoleChange}
+          onRemoveUser={onRemoveUser}
+          fetchData={changeSort}
+          changePage={changePage}
+          page={page}
+          totalPages={totalPages}
+        />
       );
     }
   };

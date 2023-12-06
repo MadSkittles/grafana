@@ -38,22 +38,18 @@ lineage: schemas: [{
 			// Tags associated with dashboard.
 			tags?: [...string]
 
-			// Theme of dashboard.
-			// Default value: dark.
-			style: "light" | *"dark"
-
 			// Timezone of dashboard. Accepted values are IANA TZDB zone ID or "browser" or "utc".
 			timezone?: string | *"browser"
 
 			// Whether a dashboard is editable or not.
-			editable: bool | *true
+			editable?: bool | *true
 
       // Whether a dashboard is eagarly loaded or not.
 			eagerLoad?: bool | *false
 
 			// Configuration of dashboard cursor sync behavior.
 			// Accepted values are 0 (sync turned off), 1 (shared crosshair), 2 (shared crosshair and tooltip).
-			graphTooltip: #DashboardCursorSync
+			graphTooltip?: #DashboardCursorSync
 
 			// Time range for dashboard.
 			// Accepted values are relative time strings like {from: 'now-6h', to: 'now'} or absolute time strings like {from: '2020-07-10T08:00:00.000Z', to: '2020-07-10T14:00:00.000Z'}.
@@ -70,8 +66,6 @@ lineage: schemas: [{
 				refresh_intervals: [...string] | *["5s", "10s", "30s", "1m", "5m", "15m", "30m", "1h", "2h", "1d"]
 				// Whether timepicker is collapsed or not. Has no effect on provisioned dashboard.
 				collapse: bool | *false
-				// Whether timepicker is enabled or not. Has no effect on provisioned dashboard.
-				enable: bool | *true
 				// Selectable options available in the time picker dropdown. Has no effect on provisioned dashboard.
 				time_options: [...string] | *["5m", "15m", "1h", "6h", "12h", "24h", "2d", "7d", "30d"]
 			}
@@ -185,6 +179,9 @@ lineage: schemas: [{
 			// TODO -- this should not exist here, it is based on the --grafana-- datasource
 			type?: string @grafanamaturity(NeedsExpertReview)
 
+			// Set to 1 for the standard annotation query all dashboards have by default.
+			builtIn?: number | *0
+
 			// unless datasources have migrated to the target+mapping,
 			// they just spread their query into the base object :(
 			...
@@ -192,8 +189,6 @@ lineage: schemas: [{
 
 		// A variable is a placeholder for a value. You can use variables in metric queries and in panel titles.
 		#VariableModel: {
-			// Unique numeric identifier for the variable.
-			id: string | *"00000000-0000-0000-0000-000000000000"
 			// Type of variable
 			type: #VariableType
 			// Name of variable
@@ -201,17 +196,15 @@ lineage: schemas: [{
 			// Optional display name
 			label?: string
 			// Visibility configuration for the variable
-			hide: #VariableHide
+			hide?: #VariableHide
 			// Whether the variable value should be managed by URL query params or not
-			skipUrlSync: bool | *false
+			skipUrlSync?: bool | *false
 			// Description of variable. It can be defined but `null`.
 			description?: string
 			// Query used to fetch values for a variable
 			query?: string | {...}
 			// Data source used to fetch values for a variable. It can be defined but `null`.
 			datasource?: #DataSourceRef
-			// Format to use while fetching all values from data source, eg: wildcard, glob, regex, pipe, etc.
-			allFormat?: string
 			// Shows current selected variable text/value on the dashboard
 			current?: #VariableOption
 			// Whether multiple values can be selected or not from variable value list
@@ -219,6 +212,8 @@ lineage: schemas: [{
 			// Options that can be selected for a variable.
 			options?: [...#VariableOption]
 			refresh?: #VariableRefresh
+			// Options sort order
+			sort?: #VariableSort
 			...
 		} @cuetsy(kind="interface") @grafana(TSVeneer="type") @grafanamaturity(NeedsExpertReview)
 
@@ -252,10 +247,6 @@ lineage: schemas: [{
 		// `5`: Alphabetical Case Insensitive ASC
 		// `6`: Alphabetical Case Insensitive DESC
 		#VariableSort: 0 | 1 | 2 | 3 | 4 | 5 | 6 @cuetsy(kind="enum",memberNames="disabled|alphabeticalAsc|alphabeticalDesc|numericalAsc|numericalDesc|alphabeticalCaseInsensitiveAsc|alphabeticalCaseInsensitiveDesc")
-
-		// Loading status
-		// Accepted values are `NotStarted` (the request is not started), `Loading` (waiting for response), `Streaming` (pulling continuous data), `Done` (response received successfully) or `Error` (failed request).
-		#LoadingState: "NotStarted" | "Loading" | "Streaming" | "Done" | "Error" @cuetsy(kind="enum")
 
 		// Ref to a DataSource instance
 		#DataSourceRef: {
@@ -530,7 +521,7 @@ lineage: schemas: [{
 			description?: string
 
 			// Whether to display the panel without a background.
-			transparent: bool | *false
+			transparent?: bool | *false
 
 			// The datasource used in all targets.
 			datasource?: #DataSourceRef
@@ -548,8 +539,9 @@ lineage: schemas: [{
 			// `h` for horizontal, `v` for vertical.
 			repeatDirection?: *"h" | "v"
 
-			// Id of the repeating panel.
-			repeatPanelId?: int64
+			// Option for repeated panels that controls max items per row
+			// Only relevant for horizontally repeated panels
+			maxPerRow?: number
 
 			// The maximum number of data points that the panel queries are retrieving.
 			maxDataPoints?: number
@@ -557,7 +549,7 @@ lineage: schemas: [{
 			// List of transformations that are applied to the panel data before rendering.
 			// When there are multiple transformations, Grafana applies them in the order they are listed.
 			// Each transformation creates a result set that then passes on to the next transformation in the processing pipeline.
-			transformations: [...#DataTransformerConfig]
+			transformations?: [...#DataTransformerConfig]
 
 			// The min time interval setting defines a lower limit for the $__interval and $__interval_ms variables.
 			// This value must be formatted as a number followed by a valid time
@@ -581,14 +573,17 @@ lineage: schemas: [{
 			// See: https://grafana.com/docs/grafana/latest/panels-visualizations/query-transform-data/#query-options
 			timeShift?: string
 
+			// Controls if the timeFrom or timeShift overrides are shown in the panel header
+			hideTimeOverride?: bool
+
 			// Dynamically load the panel
 			libraryPanel?: #LibraryPanelRef
 
 			// It depends on the panel plugin. They are specified by the Options field in panel plugin schemas.
-			options: {...} @grafanamaturity(NeedsExpertReview)
+			options?: {...} @grafanamaturity(NeedsExpertReview)
 
 			// Field options allow you to change how the data is displayed in your visualizations.
-			fieldConfig: #FieldConfigSource
+			fieldConfig?: #FieldConfigSource
 		} @cuetsy(kind="interface") @grafana(TSVeneer="type") @grafanamaturity(NeedsExpertReview)
 
 		// The data model used in Grafana, namely the data frame, is a columnar-oriented table structure that unifies both time series and table query results.

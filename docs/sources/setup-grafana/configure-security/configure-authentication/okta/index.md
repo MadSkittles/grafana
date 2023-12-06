@@ -14,7 +14,7 @@ weight: 1400
 
 # Configure Okta OAuth2 authentication
 
-{{< docs/shared "auth/intro.md" >}}
+{{< docs/shared lookup="auth/intro.md" source="grafana" version="<GRAFANA VERSION>" >}}
 
 ## Before you begin
 
@@ -131,4 +131,4 @@ the correct teams.
 
 Okta groups can be referenced by group names, like `Admins` or `Editors`.
 
-To learn more about Team Sync, refer to [Confgure Team Sync]({{< relref "../../configure-team-sync" >}}).
+To learn more about Team Sync, refer to [Configure Team Sync]({{< relref "../../configure-team-sync" >}}).

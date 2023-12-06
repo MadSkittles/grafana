@@ -14,7 +14,6 @@ import {
 import { XYFieldMatchers } from '@grafana/ui/src/components/GraphNG/types';
 import { findFieldIndex } from 'app/features/dimensions';
 
-import { ContextMenuPlugin } from '../timeseries/plugins/ContextMenuPlugin';
 import { prepareGraphableFields, regenerateLinksSupplier } from '../timeseries/utils';
 
 import { Options } from './panelcfg.gen';
@@ -30,7 +29,7 @@ export const TrendPanel = ({
   replaceVariables,
   id,
 }: PanelProps<Options>) => {
-  const { sync } = usePanelContext();
+  const { sync, dataLinkPostProcessor } = usePanelContext();
   // Need to fallback to first number field if no xField is set in options otherwise panel crashes 😬
   const trendXFieldName =
     options.xField ?? data.series[0].fields.find((field) => field.type === FieldType.number)?.name;
@@ -114,7 +113,13 @@ export const TrendPanel = ({
     >
       {(config, alignedDataFrame) => {
         if (alignedDataFrame.fields.some((f) => Boolean(f.config.links?.length))) {
-          alignedDataFrame = regenerateLinksSupplier(alignedDataFrame, info.frames!, replaceVariables, timeZone);
+          alignedDataFrame = regenerateLinksSupplier(
+            alignedDataFrame,
+            info.frames!,
+            replaceVariables,
+            timeZone,
+            dataLinkPostProcessor
+          );
         }
 
         return (
@@ -131,15 +136,6 @@ export const TrendPanel = ({
                 timeZone={timeZone}
               />
             )}
-
-            <ContextMenuPlugin
-              data={alignedDataFrame}
-              frames={info.frames!}
-              config={config}
-              timeZone={timeZone}
-              replaceVariables={replaceVariables}
-              defaultItems={[]}
-            />
           </>
         );
       }}

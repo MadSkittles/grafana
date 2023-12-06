@@ -4,8 +4,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"math/rand"
+	"slices"
+	"sync"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/grafana/grafana-plugin-sdk-go/data"
 
 	"github.com/grafana/grafana/pkg/expr"
@@ -92,6 +95,7 @@ func WithNotEmptyLabels(count int, prefix string) AlertRuleMutator {
 		rule.Labels = GenerateAlertLabels(count, prefix)
 	}
 }
+
 func WithUniqueID() AlertRuleMutator {
 	usedID := make(map[int64]struct{})
 	return func(rule *AlertRule) {
@@ -155,6 +159,18 @@ func WithUniqueOrgID() AlertRuleMutator {
 	}
 }
 
+// WithNamespaceUIDNotIn generates a random namespace UID if it is among excluded
+func WithNamespaceUIDNotIn(exclude ...string) AlertRuleMutator {
+	return func(rule *AlertRule) {
+		for {
+			if !slices.Contains(exclude, rule.NamespaceUID) {
+				return
+			}
+			rule.NamespaceUID = uuid.NewString()
+		}
+	}
+}
+
 func WithNamespace(namespace *folder.Folder) AlertRuleMutator {
 	return func(rule *AlertRule) {
 		rule.NamespaceUID = namespace.UID
@@ -176,6 +192,77 @@ func WithTitle(title string) AlertRuleMutator {
 func WithFor(duration time.Duration) AlertRuleMutator {
 	return func(rule *AlertRule) {
 		rule.For = duration
+	}
+}
+
+func WithForNTimes(timesOfInterval int64) AlertRuleMutator {
+	return func(rule *AlertRule) {
+		rule.For = time.Duration(rule.IntervalSeconds*timesOfInterval) * time.Second
+	}
+}
+
+func WithNoDataExecAs(nodata NoDataState) AlertRuleMutator {
+	return func(rule *AlertRule) {
+		rule.NoDataState = nodata
+	}
+}
+
+func WithErrorExecAs(err ExecutionErrorState) AlertRuleMutator {
+	return func(rule *AlertRule) {
+		rule.ExecErrState = err
+	}
+}
+
+func WithAnnotations(a data.Labels) AlertRuleMutator {
+	return func(rule *AlertRule) {
+		rule.Annotations = a
+	}
+}
+
+func WithAnnotation(key, value string) AlertRuleMutator {
+	return func(rule *AlertRule) {
+		if rule.Annotations == nil {
+			rule.Annotations = data.Labels{}
+		}
+		rule.Annotations[key] = value
+	}
+}
+
+func WithLabels(a data.Labels) AlertRuleMutator {
+	return func(rule *AlertRule) {
+		rule.Labels = a
+	}
+}
+
+func WithLabel(key, value string) AlertRuleMutator {
+	return func(rule *AlertRule) {
+		if rule.Labels == nil {
+			rule.Labels = data.Labels{}
+		}
+		rule.Labels[key] = value
+	}
+}
+
+func WithUniqueUID(knownUids *sync.Map) AlertRuleMutator {
+	return func(rule *AlertRule) {
+		uid := rule.UID
+		for {
+			_, ok := knownUids.LoadOrStore(uid, struct{}{})
+			if !ok {
+				rule.UID = uid
+				return
+			}
+			uid = uuid.NewString()
+		}
+	}
+}
+
+func WithQuery(query ...AlertQuery) AlertRuleMutator {
+	return func(rule *AlertRule) {
+		rule.Data = query
+		if len(query) > 1 {
+			rule.Condition = query[0].RefID
+		}
 	}
 }
 

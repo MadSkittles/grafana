@@ -142,6 +142,8 @@ export const getCategories = (): ValueFormatCategory[] => [
       { name: 'Philippine Peso (PHP)', id: 'currencyPHP', fn: currency('PHP') },
       { name: 'Vietnamese Dong (VND)', id: 'currencyVND', fn: currency('đ', true) },
       { name: 'Turkish Lira (₺)', id: 'currencyTRY', fn: currency('₺', true) },
+      { name: 'Malaysian Ringgit (RM)', id: 'currencyMYR', fn: currency('RM') },
+      { name: 'CFP franc (XPF)', id: 'currencyXPF', fn: currency('XPF') },
     ],
   },
   {
@@ -227,6 +229,7 @@ export const getCategories = (): ValueFormatCategory[] => [
       { name: 'Watt-hour per Kilogram (Wh/kg)', id: 'watthperkg', fn: SIPrefix('Wh/kg') },
       { name: 'Kilowatt-hour (kWh)', id: 'kwatth', fn: SIPrefix('Wh', 1) },
       { name: 'Kilowatt-min (kWm)', id: 'kwattm', fn: SIPrefix('W-Min', 1) },
+      { name: 'Megawatt-hour (MWh)', id: 'mwatth', fn: SIPrefix('Wh', 2) },
       { name: 'Ampere-hour (Ah)', id: 'amph', fn: SIPrefix('Ah') },
       { name: 'Kiloampere-hour (kAh)', id: 'kamph', fn: SIPrefix('Ah', 1) },
       { name: 'Milliampere-hour (mAh)', id: 'mamph', fn: SIPrefix('Ah', -1) },

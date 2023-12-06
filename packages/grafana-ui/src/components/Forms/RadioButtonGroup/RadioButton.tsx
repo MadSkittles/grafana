@@ -45,7 +45,7 @@ export const RadioButton = React.forwardRef<HTMLInputElement, RadioButtonProps>(
     const styles = getRadioButtonStyles(theme, size, fullWidth);
 
     return (
-      <>
+      <div className={styles.radioOption}>
         <input
           type="radio"
           className={styles.radio}
@@ -61,7 +61,7 @@ export const RadioButton = React.forwardRef<HTMLInputElement, RadioButtonProps>(
         <label className={styles.radioLabel} htmlFor={id} title={description || ariaLabel}>
           {children}
         </label>
-      </>
+      </div>
     );
   }
 );
@@ -77,10 +77,19 @@ const getRadioButtonStyles = stylesFactory((theme: GrafanaTheme2, size: RadioBut
   const labelHeight = height * theme.spacing.gridSize - 4 - 2;
 
   return {
+    radioOption: css({
+      display: 'flex',
+      justifyContent: 'space-between',
+      position: 'relative',
+      flex: fullWidth ? `1 0 0` : 'none',
+      textAlign: 'center',
+    }),
     radio: css({
       position: 'absolute',
       opacity: 0,
       zIndex: -1000,
+      width: '100% !important',
+      height: '100%',
 
       '&:checked + label': {
         color: theme.colors.text.primary,
@@ -99,22 +108,19 @@ const getRadioButtonStyles = stylesFactory((theme: GrafanaTheme2, size: RadioBut
       },
     }),
     radioLabel: css({
-      display: 'inline-block',
-      position: 'relative',
       fontSize,
       height: `${labelHeight}px`,
       // Deduct border from line-height for perfect vertical centering on windows and linux
       lineHeight: `${labelHeight}px`,
       color: textColor,
       padding: theme.spacing(0, padding),
-      borderRadius: theme.shape.borderRadius(),
+      borderRadius: theme.shape.radius.default,
       background: theme.colors.background.primary,
       cursor: 'pointer',
       zIndex: 1,
-      flex: fullWidth ? `1 0 0` : 'none',
-      textAlign: 'center',
       userSelect: 'none',
       whiteSpace: 'nowrap',
+      flexGrow: 1,
 
       '&:hover': {
         color: textColorHover,

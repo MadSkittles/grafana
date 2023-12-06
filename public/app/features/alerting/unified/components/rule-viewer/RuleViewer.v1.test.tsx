@@ -1,9 +1,10 @@
 import { render, screen, waitFor } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import React from 'react';
 import { TestProvider } from 'test/helpers/TestProvider';
 import { byRole, byText } from 'testing-library-selector';
 
-import { config, locationService, setBackendSrv, setDataSourceSrv } from '@grafana/runtime';
+import { locationService, setBackendSrv } from '@grafana/runtime';
 import { GrafanaRouteComponentProps } from 'app/core/navigation/types';
 import { backendSrv } from 'app/core/services/backend_srv';
 import { contextSrv } from 'app/core/services/context_srv';
@@ -20,13 +21,13 @@ import {
   getGrafanaRule,
   grantUserPermissions,
   mockDataSource,
-  MockDataSourceSrv,
   mockPromAlertingRule,
   mockRulerAlertingRule,
   promRuleFromRulerRule,
 } from '../../mocks';
 import { mockAlertmanagerChoiceResponse } from '../../mocks/alertmanagerApi';
 import { mockPluginSettings } from '../../mocks/plugins';
+import { setupDataSources } from '../../testSetup/datasources';
 import { SupportedPlugin } from '../../types/pluginBridges';
 import * as ruleId from '../../utils/rule-id';
 
@@ -47,20 +48,6 @@ const mockRoute = (id?: string): GrafanaRouteComponentProps<{ id?: string; sourc
   staticContext: {},
 });
 
-// jest.mock('../../hooks/useCombinedRule');
-jest.mock('@grafana/runtime', () => ({
-  ...jest.requireActual('@grafana/runtime'),
-  getDataSourceSrv: () => {
-    return {
-      getInstanceSettings: () => ({ name: 'prometheus' }),
-      get: () =>
-        Promise.resolve({
-          filterQuery: () => true,
-        }),
-    };
-  },
-}));
-
 jest.mock('../../hooks/useIsRuleEditable');
 jest.mock('../../api/buildInfo');
 
@@ -71,9 +58,12 @@ const mocks = {
 const ui = {
   actionButtons: {
     edit: byRole('link', { name: /edit/i }),
-    clone: byRole('link', { name: /copy/i }),
-    delete: byRole('button', { name: /delete/i }),
     silence: byRole('link', { name: 'Silence' }),
+  },
+  moreButton: byRole('button', { name: /More/i }),
+  moreButtons: {
+    duplicate: byRole('menuitem', { name: /^Duplicate$/i }),
+    delete: byRole('menuitem', { name: /delete/i }),
   },
   loadingIndicator: byText(/Loading rule/i),
 };
@@ -105,15 +95,12 @@ beforeAll(() => {
   // we need to mock this one for the "declare incident" button
   mockPluginSettings(server, SupportedPlugin.Incident);
 
-  const dsSettings = mockDataSource({
+  const promDsSettings = mockDataSource({
     name: dsName,
     uid: dsName,
   });
-  config.datasources = {
-    [dsName]: dsSettings,
-  };
 
-  setDataSourceSrv(new MockDataSourceSrv({ [dsName]: dsSettings }));
+  setupDataSources(promDsSettings);
 
   mockAlertRuleApi(server).rulerRules('grafana', {
     [mockGrafanaRule.namespace.name]: [
@@ -225,11 +212,14 @@ describe('RuleDetails RBAC', () => {
       });
       mocks.useIsRuleEditable.mockReturnValue({ loading: false, isRemovable: true });
 
+      const user = userEvent.setup();
+
       // Act
       await renderRuleViewer();
+      await user.click(ui.moreButton.get());
 
       // Assert
-      expect(ui.actionButtons.delete.get()).toBeInTheDocument();
+      expect(ui.moreButtons.delete.get()).toBeInTheDocument();
     });
 
     it('Should not render Silence button for users wihout the instance create permission', async () => {
@@ -283,9 +273,12 @@ describe('RuleDetails RBAC', () => {
       });
       grantUserPermissions([AccessControlAction.AlertingRuleCreate]);
 
-      await renderRuleViewer();
+      const user = userEvent.setup();
 
-      expect(ui.actionButtons.clone.get()).toBeInTheDocument();
+      await renderRuleViewer();
+      await user.click(ui.moreButton.get());
+
+      expect(ui.moreButtons.duplicate.get()).toBeInTheDocument();
     });
 
     it('Should NOT render clone button for users without create rule permission', async () => {
@@ -298,10 +291,12 @@ describe('RuleDetails RBAC', () => {
 
       const { AlertingRuleRead, AlertingRuleUpdate, AlertingRuleDelete } = AccessControlAction;
       grantUserPermissions([AlertingRuleRead, AlertingRuleUpdate, AlertingRuleDelete]);
+      const user = userEvent.setup();
 
       await renderRuleViewer();
+      await user.click(ui.moreButton.get());
 
-      expect(ui.actionButtons.clone.query()).not.toBeInTheDocument();
+      expect(ui.moreButtons.duplicate.query()).not.toBeInTheDocument();
     });
   });
   describe('Cloud rules action buttons', () => {
@@ -343,11 +338,14 @@ describe('RuleDetails RBAC', () => {
       });
       mocks.useIsRuleEditable.mockReturnValue({ loading: false, isRemovable: true });
 
+      const user = userEvent.setup();
+
       // Act
       await renderRuleViewer();
+      await user.click(ui.moreButton.get());
 
       // Assert
-      expect(ui.actionButtons.delete.query()).toBeInTheDocument();
+      expect(ui.moreButtons.delete.query()).toBeInTheDocument();
     });
   });
 });

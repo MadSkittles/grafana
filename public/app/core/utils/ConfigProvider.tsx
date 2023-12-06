@@ -1,9 +1,8 @@
 import React, { useEffect, useState } from 'react';
 import { SkeletonTheme } from 'react-loading-skeleton';
 
-import { GrafanaTheme2 } from '@grafana/data';
+import { GrafanaTheme2, ThemeContext } from '@grafana/data';
 import { ThemeChangedEvent, config } from '@grafana/runtime';
-import { ThemeContext } from '@grafana/ui';
 
 import { appEvents } from '../core';
 
@@ -26,7 +25,7 @@ export const ThemeProvider = ({ children, value }: { children: React.ReactNode; 
       <SkeletonTheme
         baseColor={theme.colors.background.secondary}
         highlightColor={theme.colors.emphasize(theme.colors.background.secondary)}
-        borderRadius={theme.shape.borderRadius()}
+        borderRadius={theme.shape.radius.default}
       >
         {children}
       </SkeletonTheme>

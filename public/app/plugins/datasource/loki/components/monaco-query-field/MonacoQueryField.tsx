@@ -61,20 +61,27 @@ const LANG_ID = 'logql';
 // we must only run the lang-setup code once
 let LANGUAGE_SETUP_STARTED = false;
 
+export const defaultWordPattern = /(-?\d*\.\d\w*)|([^`~!#%^&*()\-=+\[{\]}\\|;:'",.<>\/?\s]+)/g;
+
 function ensureLogQL(monaco: Monaco) {
   if (LANGUAGE_SETUP_STARTED === false) {
     LANGUAGE_SETUP_STARTED = true;
     monaco.languages.register({ id: LANG_ID });
 
     monaco.languages.setMonarchTokensProvider(LANG_ID, monarchlanguage);
-    monaco.languages.setLanguageConfiguration(LANG_ID, languageConfiguration);
+    monaco.languages.setLanguageConfiguration(LANG_ID, {
+      ...languageConfiguration,
+      wordPattern: /(-?\d*\.\d\w*)|([^`~!#%^&*()+\[{\]}\\|;:',.<>\/?\s]+)/g,
+      // Default:  /(-?\d*\.\d\w*)|([^`~!#%^&*()\-=+\[{\]}\\|;:'",.<>\/?\s]+)/g
+      // Removed `"`, `=`, and `-`, from the exclusion list, so now the completion provider can decide to overwrite any matching words, or just insert text at the cursor
+    });
   }
 }
 
 const getStyles = (theme: GrafanaTheme2, placeholder: string) => {
   return {
     container: css`
-      border-radius: ${theme.shape.borderRadius()};
+      border-radius: ${theme.shape.radius.default};
       border: 1px solid ${theme.components.input.borderColor};
       width: 100%;
       .monaco-editor .suggest-widget {
@@ -91,15 +98,7 @@ const getStyles = (theme: GrafanaTheme2, placeholder: string) => {
   };
 };
 
-const MonacoQueryField = ({
-  history,
-  onBlur,
-  onRunQuery,
-  initialValue,
-  datasource,
-  placeholder,
-  onQueryType,
-}: Props) => {
+const MonacoQueryField = ({ history, onBlur, onRunQuery, initialValue, datasource, placeholder, onChange }: Props) => {
   const id = uuidv4();
   // we need only one instance of `overrideServices` during the lifetime of the react component
   const overrideServicesRef = useRef(getOverrideServices());
@@ -151,11 +150,7 @@ const MonacoQueryField = ({
   };
 
   const onTypeDebounced = debounce(async (query: string) => {
-    if (!onQueryType) {
-      return;
-    }
-
-    onQueryType(query);
+    onChange(query);
   }, 1000);
 
   return (

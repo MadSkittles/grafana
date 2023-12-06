@@ -11,7 +11,7 @@
 
 import * as ui from '@grafana/schema';
 
-export const pluginVersion = "10.1.2";
+export const pluginVersion = "10.2.2";
 
 export enum HorizontalConstraint {
   Center = 'center',
@@ -60,6 +60,11 @@ export interface BackgroundConfig {
 export interface LineConfig {
   color?: ui.ColorDimensionConfig;
   width?: number;
+}
+
+export enum HttpRequestMethod {
+  GET = 'GET',
+  POST = 'POST',
 }
 
 export interface ConnectionCoordinates {

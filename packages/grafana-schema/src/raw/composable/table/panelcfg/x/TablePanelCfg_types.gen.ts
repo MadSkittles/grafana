@@ -11,7 +11,7 @@
 
 import * as ui from '@grafana/schema';
 
-export const pluginVersion = "10.1.2";
+export const pluginVersion = "10.2.2";
 
 export interface Options {
   /**
@@ -61,3 +61,5 @@ export const defaultOptions: Partial<Options> = {
   showTypeIcons: false,
   sortBy: [],
 };
+
+export interface FieldConfig extends ui.TableFieldOptions {}

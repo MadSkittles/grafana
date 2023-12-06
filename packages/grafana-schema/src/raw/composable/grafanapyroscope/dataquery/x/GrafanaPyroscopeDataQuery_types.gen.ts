@@ -11,11 +11,11 @@
 
 import * as common from '@grafana/schema';
 
-export const pluginVersion = "10.1.2";
+export const pluginVersion = "10.2.2";
 
-export type PhlareQueryType = ('metrics' | 'profile' | 'both');
+export type PyroscopeQueryType = ('metrics' | 'profile' | 'both');
 
-export const defaultPhlareQueryType: PhlareQueryType = 'both';
+export const defaultPyroscopeQueryType: PyroscopeQueryType = 'both';
 
 export interface GrafanaPyroscopeDataQuery extends common.DataQuery {
   /**

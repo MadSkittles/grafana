@@ -53,7 +53,8 @@ func TestIntegrationProvideFolderService(t *testing.T) {
 	t.Run("should register scope resolvers", func(t *testing.T) {
 		cfg := setting.NewCfg()
 		ac := acmock.New()
-		ProvideService(ac, bus.ProvideBus(tracing.InitializeTracerForTest()), cfg, nil, nil, nil, &featuremgmt.FeatureManager{})
+		db := sqlstore.InitTestDB(t)
+		ProvideService(ac, bus.ProvideBus(tracing.InitializeTracerForTest()), cfg, nil, nil, db, &featuremgmt.FeatureManager{})
 
 		require.Len(t, ac.Calls.RegisterAttributeScopeResolver, 3)
 	})
@@ -239,7 +240,7 @@ func TestIntegrationFolderService(t *testing.T) {
 				f := folder.NewFolder(util.GenerateShortUID(), "")
 				f.ID = rand.Int63()
 				f.UID = util.GenerateShortUID()
-				folderStore.On("GetFolderByUID", mock.Anything, orgID, f.UID).Return(f, nil)
+				folderStore.On("GetFolders", mock.Anything, orgID, []string{f.UID}).Return(map[string]*folder.Folder{f.UID: f}, nil)
 
 				var actualCmd *dashboards.DeleteDashboardCommand
 				dashStore.On("DeleteDashboard", mock.Anything, mock.Anything).Run(func(args mock.Arguments) {
@@ -405,7 +406,7 @@ func TestIntegrationNestedFolderService(t *testing.T) {
 			alertStore, err := ngstore.ProvideDBStore(cfg, featuresFlagOn, db, serviceWithFlagOn, ac, dashSrv)
 			require.NoError(t, err)
 
-			elementService := libraryelements.ProvideService(cfg, db, routeRegister, serviceWithFlagOn, featuresFlagOn)
+			elementService := libraryelements.ProvideService(cfg, db, routeRegister, serviceWithFlagOn, featuresFlagOn, ac)
 			lps, err := librarypanels.ProvideService(cfg, db, routeRegister, elementService, serviceWithFlagOn)
 			require.NoError(t, err)
 
@@ -480,7 +481,7 @@ func TestIntegrationNestedFolderService(t *testing.T) {
 			alertStore, err := ngstore.ProvideDBStore(cfg, featuresFlagOff, db, serviceWithFlagOff, ac, dashSrv)
 			require.NoError(t, err)
 
-			elementService := libraryelements.ProvideService(cfg, db, routeRegister, serviceWithFlagOff, featuresFlagOff)
+			elementService := libraryelements.ProvideService(cfg, db, routeRegister, serviceWithFlagOff, featuresFlagOff, ac)
 			lps, err := librarypanels.ProvideService(cfg, db, routeRegister, elementService, serviceWithFlagOff)
 			require.NoError(t, err)
 
@@ -601,7 +602,7 @@ func TestIntegrationNestedFolderService(t *testing.T) {
 					CanEditValue: true,
 				})
 
-				elementService := libraryelements.ProvideService(cfg, db, routeRegister, tc.service, tc.featuresFlag)
+				elementService := libraryelements.ProvideService(cfg, db, routeRegister, tc.service, tc.featuresFlag, ac)
 				lps, err := librarypanels.ProvideService(cfg, db, routeRegister, elementService, tc.service)
 				require.NoError(t, err)
 

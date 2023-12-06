@@ -13,7 +13,7 @@ import (
 	"github.com/grafana/grafana/pkg/util/errutil"
 )
 
-var ErrInternal = errutil.NewBase(errutil.StatusInternal, "accesscontrol.internal")
+var ErrInternal = errutil.Internal("accesscontrol.internal")
 
 // RoleRegistration stores a role and its assignments to built-in roles
 // (Viewer, Editor, Admin, Grafana Admin)
@@ -225,21 +225,22 @@ type GetUserPermissionsQuery struct {
 // ResourcePermission is structure that holds all actions that either a team / user / builtin-role
 // can perform against specific resource.
 type ResourcePermission struct {
-	ID          int64
-	RoleName    string
-	Actions     []string
-	Scope       string
-	UserId      int64
-	UserLogin   string
-	UserEmail   string
-	TeamId      int64
-	TeamEmail   string
-	Team        string
-	BuiltInRole string
-	IsManaged   bool
-	IsInherited bool
-	Created     time.Time
-	Updated     time.Time
+	ID               int64
+	RoleName         string
+	Actions          []string
+	Scope            string
+	UserId           int64
+	UserLogin        string
+	UserEmail        string
+	TeamId           int64
+	TeamEmail        string
+	Team             string
+	BuiltInRole      string
+	IsManaged        bool
+	IsInherited      bool
+	IsServiceAccount bool
+	Created          time.Time
+	Updated          time.Time
 }
 
 func (p *ResourcePermission) Contains(targetActions []string) bool {
@@ -318,17 +319,9 @@ func (cmd *SaveExternalServiceRoleCommand) Validate() error {
 }
 
 const (
-	GlobalOrgID                  = 0
-	FixedRolePrefix              = "fixed:"
-	ManagedRolePrefix            = "managed:"
-	BasicRolePrefix              = "basic:"
-	PluginRolePrefix             = "plugins:"
-	ExternalServiceRolePrefix    = "externalservice:"
-	BasicRoleUIDPrefix           = "basic_"
-	ExternalServiceRoleUIDPrefix = "externalservice_"
-	RoleGrafanaAdmin             = "Grafana Admin"
-
+	GlobalOrgID      = 0
 	GeneralFolderUID = "general"
+	RoleGrafanaAdmin = "Grafana Admin"
 
 	// Permission actions
 
@@ -455,11 +448,19 @@ const (
 	ActionAlertingNotificationsExternalRead  = "alert.notifications.external:read"
 
 	// Alerting provisioning actions
-	ActionAlertingProvisioningRead  = "alert.provisioning:read"
-	ActionAlertingProvisioningWrite = "alert.provisioning:write"
+	ActionAlertingProvisioningRead        = "alert.provisioning:read"
+	ActionAlertingProvisioningReadSecrets = "alert.provisioning.secrets:read"
+	ActionAlertingProvisioningWrite       = "alert.provisioning:write"
 
 	// Feature Management actions
-	ActionFeatureManagementRead = "featuremgmt.read"
+	ActionFeatureManagementRead  = "featuremgmt.read"
+	ActionFeatureManagementWrite = "featuremgmt.write"
+
+	// Library Panel actions
+	ActionLibraryPanelsCreate = "library.panels:create"
+	ActionLibraryPanelsRead   = "library.panels:read"
+	ActionLibraryPanelsWrite  = "library.panels:write"
+	ActionLibraryPanelsDelete = "library.panels:delete"
 )
 
 var (

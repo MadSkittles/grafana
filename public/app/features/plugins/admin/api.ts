@@ -3,7 +3,7 @@ import { getBackendSrv, isFetchError } from '@grafana/runtime';
 import { accessControlQueryParam } from 'app/core/utils/accessControl';
 
 import { API_ROOT, GCOM_API_ROOT } from './constants';
-import { isLocalPluginVisible, isRemotePluginVisible } from './helpers';
+import { isLocalPluginVisibleByConfig, isRemotePluginVisibleByConfig } from './helpers';
 import { LocalPlugin, RemotePlugin, CatalogPluginDetails, Version, PluginVersion } from './types';
 
 export async function getPluginDetails(id: string): Promise<CatalogPluginDetails> {
@@ -25,13 +25,29 @@ export async function getPluginDetails(id: string): Promise<CatalogPluginDetails
     links: local?.info.links || remote?.json?.info.links || [],
     readme: localReadme || remote?.readme,
     versions,
+    statusContext: remote?.statusContext ?? '',
   };
 }
 
 export async function getRemotePlugins(): Promise<RemotePlugin[]> {
-  const { items: remotePlugins }: { items: RemotePlugin[] } = await getBackendSrv().get(`${GCOM_API_ROOT}/plugins`);
+  try {
+    const { items: remotePlugins }: { items: RemotePlugin[] } = await getBackendSrv().get(`${GCOM_API_ROOT}/plugins`, {
+      // We are also fetching deprecated plugins, because we would like to be able to label plugins in the list that are both installed and deprecated.
+      // (We won't show not installed deprecated plugins in the list)
+      includeDeprecated: true,
+    });
 
-  return remotePlugins.filter(isRemotePluginVisible);
+    return remotePlugins.filter(isRemotePluginVisibleByConfig);
+  } catch (error) {
+    if (isFetchError(error)) {
+      // It can happen that GCOM is not available, in that case we show a limited set of information to the user.
+      error.isHandled = true;
+      console.error('Failed to fetch plugins from catalog (default https://grafana.com/api/plugins)');
+      return [];
+    }
+
+    throw error;
+  }
 }
 
 export async function getPluginErrors(): Promise<PluginError[]> {
@@ -97,7 +113,7 @@ export async function getLocalPlugins(): Promise<LocalPlugin[]> {
     accessControlQueryParam({ embedded: 0 })
   );
 
-  return localPlugins.filter(isLocalPluginVisible);
+  return localPlugins.filter(isLocalPluginVisibleByConfig);
 }
 
 export async function installPlugin(id: string) {

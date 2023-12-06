@@ -98,7 +98,7 @@ export const routeLayer: MapLayerRegistryItem<RouteConfig> = {
       vectorLayer.setStyle(styleBase);
     } else {
       vectorLayer.setStyle((feature: FeatureLike) => {
-        const idx = feature.get('rowIndex') as number;
+        const idx: number = feature.get('rowIndex');
         const dims = style.dims;
         if (!dims || !isNumber(idx)) {
           return routeStyle(style.base);
@@ -223,8 +223,8 @@ export const routeLayer: MapLayerRegistryItem<RouteConfig> = {
         .subscribe({
           next: (event) => {
             const feature = source.getFeatures()[0];
-            const frame = feature?.get('frame') as DataFrame;
-            const time = event.payload?.point?.time as number;
+            const frame: DataFrame = feature?.get('frame');
+            const time: number = event.payload?.point?.time;
             if (frame && time) {
               const timeField = frame.fields.find((f) => f.name === TIME_SERIES_TIME_FIELD_NAME);
               if (timeField) {
@@ -317,14 +317,14 @@ function findNearestTimeIndex(timestamps: number[], time: number): number | null
   if (time < timestamps[probableIdx]) {
     for (let i = probableIdx; i > 0; i--) {
       if (time > timestamps[i]) {
-        return i;
+        return i < lastIdx ? i + 1 : lastIdx;
       }
     }
     return 0;
   } else {
     for (let i = probableIdx; i < lastIdx; i++) {
       if (time < timestamps[i]) {
-        return i;
+        return i > 0 ? i - 1 : 0;
       }
     }
     return lastIdx;
