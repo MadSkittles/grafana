@@ -176,7 +176,7 @@ func NewFakePluginRegistry() *FakePluginRegistry {
 	}
 }
 
-func (f *FakePluginRegistry) Plugin(_ context.Context, id string) (*plugins.Plugin, bool) {
+func (f *FakePluginRegistry) Plugin(_ context.Context, id, _ string) (*plugins.Plugin, bool) {
 	p, exists := f.Store[id]
 	return p, exists
 }
@@ -195,7 +195,7 @@ func (f *FakePluginRegistry) Add(_ context.Context, p *plugins.Plugin) error {
 	return nil
 }
 
-func (f *FakePluginRegistry) Remove(_ context.Context, id string) error {
+func (f *FakePluginRegistry) Remove(_ context.Context, id, _ string) error {
 	delete(f.Store, id)
 	return nil
 }
@@ -204,6 +204,7 @@ type FakePluginRepo struct {
 	GetPluginArchiveFunc      func(_ context.Context, pluginID, version string, _ repo.CompatOpts) (*repo.PluginArchive, error)
 	GetPluginArchiveByURLFunc func(_ context.Context, archiveURL string, _ repo.CompatOpts) (*repo.PluginArchive, error)
 	GetPluginArchiveInfoFunc  func(_ context.Context, pluginID, version string, _ repo.CompatOpts) (*repo.PluginArchiveInfo, error)
+	PluginVersionFunc         func(pluginID, version string, compatOpts repo.CompatOpts) (repo.VersionData, error)
 }
 
 // GetPluginArchive fetches the requested plugin archive.
@@ -230,6 +231,13 @@ func (r *FakePluginRepo) GetPluginArchiveInfo(ctx context.Context, pluginID, ver
 		return r.GetPluginArchiveInfoFunc(ctx, pluginID, version, opts)
 	}
 	return &repo.PluginArchiveInfo{}, nil
+}
+
+func (r *FakePluginRepo) PluginVersion(pluginID, version string, compatOpts repo.CompatOpts) (repo.VersionData, error) {
+	if r.PluginVersionFunc != nil {
+		return r.PluginVersionFunc(pluginID, version, compatOpts)
+	}
+	return repo.VersionData{}, nil
 }
 
 type FakePluginStorage struct {
@@ -415,12 +423,12 @@ func (s *FakePluginSource) DefaultSignature(ctx context.Context) (plugins.Signat
 }
 
 type FakePluginFileStore struct {
-	FileFunc func(ctx context.Context, pluginID, filename string) (*plugins.File, error)
+	FileFunc func(ctx context.Context, pluginID, pluginVersion, filename string) (*plugins.File, error)
 }
 
-func (f *FakePluginFileStore) File(ctx context.Context, pluginID, filename string) (*plugins.File, error) {
+func (f *FakePluginFileStore) File(ctx context.Context, pluginID, pluginVersion, filename string) (*plugins.File, error) {
 	if f.FileFunc != nil {
-		return f.FileFunc(ctx, pluginID, filename)
+		return f.FileFunc(ctx, pluginID, pluginVersion, filename)
 	}
 	return nil, nil
 }
@@ -429,8 +437,16 @@ type FakeAuthService struct {
 	Result *auth.ExternalService
 }
 
-func (f *FakeAuthService) RegisterExternalService(ctx context.Context, name string, svc *plugindef.ExternalServiceRegistration) (*auth.ExternalService, error) {
+func (f *FakeAuthService) HasExternalService(ctx context.Context, pluginID string) (bool, error) {
+	return f.Result != nil, nil
+}
+
+func (f *FakeAuthService) RegisterExternalService(ctx context.Context, pluginID string, pType plugindef.Type, svc *plugindef.IAM) (*auth.ExternalService, error) {
 	return f.Result, nil
+}
+
+func (f *FakeAuthService) RemoveExternalService(ctx context.Context, pluginID string) error {
+	return nil
 }
 
 type FakeDiscoverer struct {
@@ -557,27 +573,4 @@ func (p *FakeBackendPlugin) Kill() {
 	p.mutex.Lock()
 	defer p.mutex.Unlock()
 	p.Running = false
-}
-
-type FakeFeatureToggles struct {
-	features map[string]bool
-}
-
-func NewFakeFeatureToggles(features ...string) *FakeFeatureToggles {
-	m := make(map[string]bool)
-	for _, f := range features {
-		m[f] = true
-	}
-
-	return &FakeFeatureToggles{
-		features: m,
-	}
-}
-
-func (f *FakeFeatureToggles) GetEnabled(_ context.Context) map[string]bool {
-	return f.features
-}
-
-func (f *FakeFeatureToggles) IsEnabled(feature string) bool {
-	return f.features[feature]
 }

@@ -54,7 +54,7 @@ interface ChangePanelsState {
   exploreId: string;
   panelsState: ExplorePanelsState;
 }
-const changePanelsStateAction = createAction<ChangePanelsState>('explore/changePanels');
+export const changePanelsStateAction = createAction<ChangePanelsState>('explore/changePanels');
 export function changePanelState(
   exploreId: string,
   panel: PreferredVisualisationType,

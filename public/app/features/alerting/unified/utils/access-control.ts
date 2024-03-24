@@ -1,7 +1,8 @@
+import { getConfig } from 'app/core/config';
 import { contextSrv } from 'app/core/services/context_srv';
 import { AccessControlAction } from 'app/types';
 
-import { isGrafanaRulesSource } from './datasource';
+import { GRAFANA_RULES_SOURCE_NAME, isGrafanaRulesSource } from './datasource';
 
 type RulesSourceType = 'grafana' | 'external';
 
@@ -124,4 +125,13 @@ export function getRulesAccess() {
       return contextSrv.hasPermission(getRulesPermissions(rulesSourceName).update);
     },
   };
+}
+
+export function getCreateAlertInMenuAvailability() {
+  const { unifiedAlertingEnabled } = getConfig();
+  const hasRuleReadPermissions = contextSrv.hasPermission(getRulesPermissions(GRAFANA_RULES_SOURCE_NAME).read);
+  const hasRuleUpdatePermissions = contextSrv.hasPermission(getRulesPermissions(GRAFANA_RULES_SOURCE_NAME).update);
+  const isAlertingAvailableForRead = unifiedAlertingEnabled && hasRuleReadPermissions;
+
+  return isAlertingAvailableForRead && hasRuleUpdatePermissions;
 }

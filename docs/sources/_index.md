@@ -3,19 +3,23 @@ aliases:
   - /docs/grafana/v1.1/
   - /docs/grafana/v3.1/
   - guides/reference/admin/
-description: Guides, installation, and feature documentation
+description: Open source documentation for Grafana
 keywords:
   - grafana
+  - open source
   - installation
   - documentation
 labels:
   products:
     - enterprise
     - oss
-title: Grafana documentation
+cascade:
+  TEMPO_VERSION: latest
+  PYROSCOPE_VERSION: latest
+title: Grafana open source documentation
 ---
 
-# Grafana documentation
+# Grafana open source documentation
 
 ## Installing Grafana
 
@@ -38,6 +42,10 @@ title: Grafana documentation
     <a href="{{< relref "setup-grafana/installation/docker/" >}}" class="nav-cards__item nav-cards__item--install">
         <img src="/static/img/logos/logo-docker.svg">
         <h5>Run Docker image</h5>
+    </a>
+    <a href="{{< relref "setup-grafana/installation/kubernetes/" >}}" class="nav-cards__item nav-cards__item--install">
+        <img src="/static/img/logos/logo-kubernetes.svg">
+        <h5>Run on Kubernetes</h5>
     </a>
     <a href="https://grafana.com/docs/grafana-cloud/" class="nav-cards__item nav-cards__item--install">
         <div class="nav-cards__icon fa fa-cloud">
@@ -74,8 +82,8 @@ title: Grafana documentation
         <h4>Provisioning</h4>
         <p>Learn how to automate your Grafana configuration.</p>
     </a>
-    <a href="{{< relref "whatsnew/whats-new-in-v10-2/" >}}" class="nav-cards__item nav-cards__item--guide">
-        <h4>What's new in v10.2</h4>
+    <a href="{{< relref "whatsnew/whats-new-in-v10-4/" >}}" class="nav-cards__item nav-cards__item--guide">
+        <h4>What's new in v10.4</h4>
         <p>Explore the features and enhancements in the latest release.</p>
     </a>
 

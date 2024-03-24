@@ -14,14 +14,13 @@ import {
   VariableSupportType,
 } from '@grafana/data';
 import { getPanelPlugin } from '@grafana/data/test/__mocks__/pluginMocks';
-import { setPluginImportUtils } from '@grafana/runtime';
+import { getPluginLinkExtensions, setPluginImportUtils } from '@grafana/runtime';
 import {
   MultiValueVariable,
   SceneDataLayers,
   SceneGridItemLike,
   SceneGridLayout,
   SceneGridRow,
-  SceneVariable,
   VizPanel,
 } from '@grafana/scenes';
 import { Dashboard, LoadingState, Panel, RowPanel, VariableRefresh } from '@grafana/schema';
@@ -31,7 +30,8 @@ import { reduceTransformRegistryItem } from 'app/features/transformers/editors/R
 import { SHARED_DASHBOARD_QUERY } from 'app/plugins/datasource/dashboard';
 
 import { RowRepeaterBehavior } from '../scene/RowRepeaterBehavior';
-import { activateFullSceneTree } from '../utils/test-utils';
+import { NEW_LINK } from '../settings/links/utils';
+import { activateFullSceneTree, buildPanelRepeaterScene } from '../utils/test-utils';
 import { getVizPanelKeyForPanelId } from '../utils/utils';
 
 import { GRAFANA_DATASOURCE_REF } from './const';
@@ -44,7 +44,13 @@ import {
   buildGridItemForPanel,
   transformSaveModelToScene,
 } from './transformSaveModelToScene';
-import { gridItemToPanel, transformSceneToSaveModel, trimDashboardForSnapshot } from './transformSceneToSaveModel';
+import {
+  gridItemToPanel,
+  gridRowToSaveModel,
+  panelRepeaterToPanels,
+  transformSceneToSaveModel,
+  trimDashboardForSnapshot,
+} from './transformSceneToSaveModel';
 
 standardTransformersRegistry.setInit(() => [reduceTransformRegistryItem]);
 setPluginImportUtils({
@@ -114,6 +120,7 @@ const runRequestMock = jest.fn().mockImplementation((ds: DataSourceApi, request:
     })
   );
 });
+
 jest.mock('@grafana/runtime', () => ({
   ...jest.requireActual('@grafana/runtime'),
   getDataSourceSrv: () => ({
@@ -129,15 +136,64 @@ jest.mock('@grafana/runtime', () => ({
     return runRequestMock(ds, request);
   },
   config: {
-    panels: [],
+    panels: {
+      text: { skipDataQuery: true },
+    },
+    featureToggles: {
+      dataTrails: false,
+    },
     theme2: {
       visualization: {
         getColorByName: jest.fn().mockReturnValue('red'),
       },
     },
   },
+  setPluginExtensionGetter: jest.fn(),
+  getPluginLinkExtensions: jest.fn(),
 }));
+
+const getPluginLinkExtensionsMock = jest.mocked(getPluginLinkExtensions);
+
+jest.mock('@grafana/scenes', () => ({
+  ...jest.requireActual('@grafana/scenes'),
+  sceneUtils: {
+    ...jest.requireActual('@grafana/scenes').sceneUtils,
+    registerVariableMacro: jest.fn(),
+  },
+}));
+
 describe('transformSceneToSaveModel', () => {
+  beforeEach(() => {
+    getPluginLinkExtensionsMock.mockRestore();
+    getPluginLinkExtensionsMock.mockReturnValue({ extensions: [] });
+  });
+
+  describe('Given a simple scene with custom settings', () => {
+    it('Should transform back to persisted model', () => {
+      const dashboardWithCustomSettings = {
+        ...dashboard_to_load1,
+        title: 'My custom title',
+        description: 'My custom description',
+        tags: ['tag1', 'tag2'],
+        timezone: 'America/New_York',
+        weekStart: 'monday',
+        graphTooltip: 1,
+        editable: false,
+        timepicker: {
+          ...dashboard_to_load1.timepicker,
+          refresh_intervals: ['5m', '15m', '30m', '1h'],
+          time_options: ['5m', '15m', '30m'],
+          hidden: true,
+        },
+        links: [{ ...NEW_LINK, title: 'Link 1' }],
+      };
+      const scene = transformSaveModelToScene({ dashboard: dashboardWithCustomSettings as any, meta: {} });
+      const saveModel = transformSceneToSaveModel(scene);
+
+      expect(saveModel).toMatchSnapshot();
+    });
+  });
+
   describe('Given a simple scene with variables', () => {
     it('Should transform back to persisted model', () => {
       const scene = transformSaveModelToScene({ dashboard: dashboard_to_load1 as any, meta: {} });
@@ -169,7 +225,7 @@ describe('transformSceneToSaveModel', () => {
       const rowRepeater = rowWithRepeat.state.$behaviors![0] as RowRepeaterBehavior;
 
       // trigger row repeater
-      rowRepeater.variableDependency?.variableUpdatesCompleted(new Set<SceneVariable>([variable]));
+      rowRepeater.variableDependency?.variableUpdateCompleted(variable, true);
 
       // Make sure the repeated rows have been added to runtime scene model
       expect(grid.state.children.length).toBe(5);
@@ -220,6 +276,39 @@ describe('transformSceneToSaveModel', () => {
       expect(saveModel.gridPos?.y).toBe(2);
       expect(saveModel.gridPos?.w).toBe(12);
       expect(saveModel.gridPos?.h).toBe(8);
+    });
+    it('Given panel with links', () => {
+      const gridItem = buildGridItemFromPanelSchema({
+        title: '',
+        type: 'text-plugin-34',
+        gridPos: { x: 1, y: 2, w: 12, h: 8 },
+        links: [
+          // @ts-expect-error Panel link is wrongly typed as DashboardLink
+          {
+            title: 'Link 1',
+            url: 'http://some.test.link1',
+          },
+          // @ts-expect-error Panel link is wrongly typed as DashboardLink
+          {
+            targetBlank: true,
+            title: 'Link 2',
+            url: 'http://some.test.link2',
+          },
+        ],
+      });
+
+      const saveModel = gridItemToPanel(gridItem);
+      expect(saveModel.links).toEqual([
+        {
+          title: 'Link 1',
+          url: 'http://some.test.link1',
+        },
+        {
+          targetBlank: true,
+          title: 'Link 2',
+          url: 'http://some.test.link2',
+        },
+      ]);
     });
   });
 
@@ -475,6 +564,37 @@ describe('transformSceneToSaveModel', () => {
         uid: SHARED_DASHBOARD_QUERY,
       });
     });
+
+    it('Given panel with query caching options', () => {
+      const panel = buildGridItemFromPanelSchema({
+        datasource: {
+          type: 'grafana-testdata',
+          uid: 'abc',
+        },
+        cacheTimeout: '10',
+        queryCachingTTL: 200000,
+        maxDataPoints: 100,
+        targets: [
+          {
+            refId: 'A',
+            expr: 'A',
+            datasource: {
+              type: 'grafana-testdata',
+              uid: 'abc',
+            },
+          },
+          {
+            refId: 'B',
+            expr: 'B',
+          },
+        ],
+      });
+
+      const result = gridItemToPanel(panel);
+
+      expect(result.cacheTimeout).toBe('10');
+      expect(result.queryCachingTTL).toBe(200000);
+    });
   });
 
   describe('Snapshots', () => {
@@ -496,7 +616,6 @@ describe('transformSceneToSaveModel', () => {
       expect(snapshot.panels?.length).toBe(3);
 
       // Regular panel with SceneQueryRunner
-      // @ts-expect-error
       expect(snapshot.panels?.[0].datasource).toEqual(GRAFANA_DATASOURCE_REF);
       // @ts-expect-error
       expect(snapshot.panels?.[0].targets?.[0].datasource).toEqual(GRAFANA_DATASOURCE_REF);
@@ -509,7 +628,6 @@ describe('transformSceneToSaveModel', () => {
       });
 
       // Panel with transformations
-      // @ts-expect-error
       expect(snapshot.panels?.[1].datasource).toEqual(GRAFANA_DATASOURCE_REF);
       // @ts-expect-error
       expect(snapshot.panels?.[1].targets?.[0].datasource).toEqual(GRAFANA_DATASOURCE_REF);
@@ -529,7 +647,6 @@ describe('transformSceneToSaveModel', () => {
       ]);
 
       // Panel with a shared query (dahsboard query)
-      // @ts-expect-error
       expect(snapshot.panels?.[2].datasource).toEqual(GRAFANA_DATASOURCE_REF);
       // @ts-expect-error
       expect(snapshot.panels?.[2].targets?.[0].datasource).toEqual(GRAFANA_DATASOURCE_REF);
@@ -597,6 +714,107 @@ describe('transformSceneToSaveModel', () => {
       expect(snapshot.panels?.[4].collapsed).toEqual(true);
     });
 
+    describe('repeats', () => {
+      it('handles repeated panels', async () => {
+        const { scene, repeater } = buildPanelRepeaterScene({ variableQueryTime: 0, numberOfOptions: 2 });
+
+        activateFullSceneTree(scene);
+
+        expect(repeater.state.repeatedPanels?.length).toBe(2);
+        const result = panelRepeaterToPanels(repeater, true);
+
+        expect(result).toHaveLength(2);
+
+        // @ts-expect-error
+        expect(result[0].scopedVars).toEqual({
+          server: {
+            text: 'A',
+            value: '1',
+          },
+        });
+        // @ts-expect-error
+        expect(result[1].scopedVars).toEqual({
+          server: {
+            text: 'B',
+            value: '2',
+          },
+        });
+
+        expect(result[0].title).toEqual('Panel $server');
+        expect(result[1].title).toEqual('Panel $server');
+      });
+
+      it('handles row repeats ', () => {
+        const { scene, row } = buildPanelRepeaterScene({
+          variableQueryTime: 0,
+          numberOfOptions: 2,
+          useRowRepeater: true,
+          usePanelRepeater: false,
+        });
+
+        activateFullSceneTree(scene);
+
+        let panels: Panel[] = [];
+        gridRowToSaveModel(row, panels, true);
+
+        expect(panels).toHaveLength(2);
+        expect(panels[0].repeat).toBe('handler');
+
+        // @ts-expect-error
+        expect(panels[0].scopedVars).toEqual({
+          handler: {
+            text: 'AA',
+            value: '11',
+          },
+        });
+
+        expect(panels[1].title).toEqual('Panel $server');
+        expect(panels[1].gridPos).toEqual({ x: 0, y: 0, w: 10, h: 10 });
+      });
+
+      it('handles row repeats with panel repeater', () => {
+        const { scene, row } = buildPanelRepeaterScene({
+          variableQueryTime: 0,
+          numberOfOptions: 2,
+          useRowRepeater: true,
+          usePanelRepeater: true,
+        });
+
+        activateFullSceneTree(scene);
+
+        let panels: Panel[] = [];
+        gridRowToSaveModel(row, panels, true);
+
+        expect(panels[0].repeat).toBe('handler');
+
+        // @ts-expect-error
+        expect(panels[0].scopedVars).toEqual({
+          handler: {
+            text: 'AA',
+            value: '11',
+          },
+        });
+
+        // @ts-expect-error
+        expect(panels[1].scopedVars).toEqual({
+          server: {
+            text: 'A',
+            value: '1',
+          },
+        });
+        // @ts-expect-error
+        expect(panels[2].scopedVars).toEqual({
+          server: {
+            text: 'B',
+            value: '2',
+          },
+        });
+
+        expect(panels[1].title).toEqual('Panel $server');
+        expect(panels[2].title).toEqual('Panel $server');
+      });
+    });
+
     describe('trimDashboardForSnapshot', () => {
       let snapshot: Dashboard = {} as Dashboard;
 
@@ -661,19 +879,17 @@ describe('transformSceneToSaveModel', () => {
 
         expect(snapshot.panels?.length).toBe(3);
         expect(result.panels?.length).toBe(1);
-        // @ts-expect-error
         expect(result.panels?.[0].gridPos).toEqual({ w: 24, x: 0, y: 0, h: 20 });
       });
 
-      // TODO: Uncomment when we support links
-      // it('should remove links', async () => {
-      //   const scene = transformSaveModelToScene({ dashboard: snapshotableDashboardJson as any, meta: {} });
-      //   activateFullSceneTree(scene);
-      //   const snapshot = transformSceneToSaveModel(scene, true);
-      //   expect(snapshot.links?.length).toBe(1);
-      //   const result = trimDashboardForSnapshot('Snap title', getTimeRange({ from: 'now-6h', to: 'now' }), snapshot);
-      //   expect(result.links?.length).toBe(0);
-      // });
+      it('should remove links', async () => {
+        const scene = transformSaveModelToScene({ dashboard: snapshotableDashboardJson as any, meta: {} });
+        activateFullSceneTree(scene);
+        const snapshot = transformSceneToSaveModel(scene, true);
+        expect(snapshot.links?.length).toBe(1);
+        const result = trimDashboardForSnapshot('Snap title', getTimeRange({ from: 'now-6h', to: 'now' }), snapshot);
+        expect(result.links?.length).toBe(0);
+      });
     });
   });
 });

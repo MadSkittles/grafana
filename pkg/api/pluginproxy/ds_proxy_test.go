@@ -37,6 +37,7 @@ import (
 	"github.com/grafana/grafana/pkg/services/oauthtoken"
 	"github.com/grafana/grafana/pkg/services/oauthtoken/oauthtokentest"
 	"github.com/grafana/grafana/pkg/services/org"
+	"github.com/grafana/grafana/pkg/services/pluginsintegration/pluginstore"
 	"github.com/grafana/grafana/pkg/services/quota/quotatest"
 	"github.com/grafana/grafana/pkg/services/secrets"
 	"github.com/grafana/grafana/pkg/services/secrets/fakes"
@@ -44,8 +45,13 @@ import (
 	secretsmng "github.com/grafana/grafana/pkg/services/secrets/manager"
 	"github.com/grafana/grafana/pkg/services/user"
 	"github.com/grafana/grafana/pkg/setting"
+	"github.com/grafana/grafana/pkg/tests/testsuite"
 	"github.com/grafana/grafana/pkg/web"
 )
+
+func TestMain(m *testing.M) {
+	testsuite.Run(m)
+}
 
 func TestDataSourceProxy_routeRule(t *testing.T) {
 	cfg := &setting.Cfg{}
@@ -155,6 +161,36 @@ func TestDataSourceProxy_routeRule(t *testing.T) {
 			ApplyRoute(proxy.ctx.Req.Context(), req, proxy.proxyPath, proxy.matchedRoute, dsInfo, proxy.cfg)
 
 			assert.Equal(t, "http://localhost/asd", req.URL.String())
+		})
+
+		t.Run("When matching route path and has setting url", func(t *testing.T) {
+			ctx, req := setUp()
+			proxy, err := setupDSProxyTest(t, ctx, ds, routes, "api/common/some/method")
+			require.NoError(t, err)
+			proxy.matchedRoute = &plugins.Route{
+				Path: "api/common",
+				URL:  "{{.URL}}",
+				Headers: []plugins.Header{
+					{Name: "x-header", Content: "my secret {{.SecureJsonData.key}}"},
+				},
+				URLParams: []plugins.URLParam{
+					{Name: "{{.JsonData.queryParam}}", Content: "{{.SecureJsonData.key}}"},
+				},
+			}
+
+			dsInfo := DSInfo{
+				ID:       ds.ID,
+				Updated:  ds.Updated,
+				JSONData: jd,
+				DecryptedSecureJSONData: map[string]string{
+					"key": "123",
+				},
+				URL: "https://dynamic.grafana.com",
+			}
+			ApplyRoute(proxy.ctx.Req.Context(), req, proxy.proxyPath, proxy.matchedRoute, dsInfo, proxy.cfg)
+
+			assert.Equal(t, "https://dynamic.grafana.com/some/method?apiKey=123", req.URL.String())
+			assert.Equal(t, "my secret 123", req.Header.Get("x-header"))
 		})
 
 		t.Run("When matching route path and has dynamic body", func(t *testing.T) {
@@ -789,7 +825,7 @@ func getDatasourceProxiedRequest(t *testing.T, ctx *contextmodel.ReqContext, cfg
 	secretsStore := secretskvs.NewSQLSecretsKVStore(sqlStore, secretsService, log.New("test.logger"))
 	features := featuremgmt.WithFeatures()
 	quotaService := quotatest.New(false, nil)
-	dsService, err := datasourceservice.ProvideService(nil, secretsService, secretsStore, cfg, features, acimpl.ProvideAccessControl(cfg), &actest.FakePermissionsService{}, quotaService)
+	dsService, err := datasourceservice.ProvideService(nil, secretsService, secretsStore, cfg, features, acimpl.ProvideAccessControl(cfg), &actest.FakePermissionsService{}, quotaService, &pluginstore.FakePluginStore{})
 	require.NoError(t, err)
 	proxy, err := NewDataSourceProxy(ds, routes, ctx, "", cfg, httpclient.NewProvider(), &oauthtoken.Service{}, dsService, tracer, features)
 	require.NoError(t, err)
@@ -909,7 +945,7 @@ func runDatasourceAuthTest(t *testing.T, secretsService secrets.Service, secrets
 	var routes []*plugins.Route
 	features := featuremgmt.WithFeatures()
 	quotaService := quotatest.New(false, nil)
-	dsService, err := datasourceservice.ProvideService(nil, secretsService, secretsStore, cfg, features, acimpl.ProvideAccessControl(cfg), &actest.FakePermissionsService{}, quotaService)
+	dsService, err := datasourceservice.ProvideService(nil, secretsService, secretsStore, cfg, features, acimpl.ProvideAccessControl(cfg), &actest.FakePermissionsService{}, quotaService, &pluginstore.FakePluginStore{})
 	require.NoError(t, err)
 	proxy, err := NewDataSourceProxy(test.datasource, routes, ctx, "", &setting.Cfg{}, httpclient.NewProvider(), &oauthtoken.Service{}, dsService, tracer, features)
 	require.NoError(t, err)
@@ -963,7 +999,7 @@ func setupDSProxyTest(t *testing.T, ctx *contextmodel.ReqContext, ds *datasource
 	secretsService := secretsmng.SetupTestService(t, fakes.NewFakeSecretsStore())
 	secretsStore := secretskvs.NewSQLSecretsKVStore(dbtest.NewFakeDB(), secretsService, log.NewNopLogger())
 	features := featuremgmt.WithFeatures()
-	dsService, err := datasourceservice.ProvideService(nil, secretsService, secretsStore, cfg, features, acimpl.ProvideAccessControl(cfg), &actest.FakePermissionsService{}, quotatest.New(false, nil))
+	dsService, err := datasourceservice.ProvideService(nil, secretsService, secretsStore, cfg, features, acimpl.ProvideAccessControl(cfg), &actest.FakePermissionsService{}, quotatest.New(false, nil), &pluginstore.FakePluginStore{})
 	require.NoError(t, err)
 
 	tracer := tracing.InitializeTracerForTest()

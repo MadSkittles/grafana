@@ -2,7 +2,9 @@ package accesscontrol
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 
 	"github.com/grafana/grafana/pkg/registry"
@@ -40,6 +42,8 @@ type Service interface {
 	SaveExternalServiceRole(ctx context.Context, cmd SaveExternalServiceRoleCommand) error
 	// DeleteExternalServiceRole removes an external service's role and its assignment.
 	DeleteExternalServiceRole(ctx context.Context, externalServiceID string) error
+	// SyncUserRoles adds provided roles to user
+	SyncUserRoles(ctx context.Context, orgID int64, cmd SyncUserRolesCommand) error
 }
 
 type RoleRegistry interface {
@@ -55,7 +59,53 @@ type SearchOptions struct {
 	ActionPrefix string // Needed for the PoC v1, it's probably going to be removed.
 	Action       string
 	Scope        string
-	UserID       int64 // ID for the user for which to return information, if none is specified information is returned for all users.
+	NamespacedID string    // ID of the identity (ex: user:3, service-account:4)
+	wildcards    Wildcards // private field computed based on the Scope
+}
+
+// Wildcards computes the wildcard scopes that include the scope
+func (s *SearchOptions) Wildcards() []string {
+	if s.wildcards != nil {
+		return s.wildcards
+	}
+
+	if s.Scope == "" {
+		s.wildcards = []string{}
+		return s.wildcards
+	}
+
+	s.wildcards = WildcardsFromPrefix(ScopePrefix(s.Scope))
+	return s.wildcards
+}
+
+func (s *SearchOptions) ComputeUserID() (int64, error) {
+	if s.NamespacedID == "" {
+		return 0, errors.New("namespacedID must be set")
+	}
+	// Split namespaceID into namespace and ID
+	parts := strings.Split(s.NamespacedID, ":")
+	// Validate namespace ID format
+	if len(parts) != 2 {
+		return 0, fmt.Errorf("invalid namespaced ID: %s", s.NamespacedID)
+	}
+	// Validate namespace type is user or service account
+	if parts[0] != identity.NamespaceUser && parts[0] != identity.NamespaceServiceAccount {
+		return 0, fmt.Errorf("invalid namespace: %s", parts[0])
+	}
+	// Validate namespace ID is a number
+	id, err := strconv.ParseInt(parts[1], 10, 64)
+	if err != nil {
+		return 0, fmt.Errorf("invalid namespaced ID: %s", s.NamespacedID)
+	}
+	return id, nil
+}
+
+type SyncUserRolesCommand struct {
+	UserID int64
+	// name of roles the user should have
+	RolesToAdd []string
+	// name of roles the user should not have
+	RolesToRemove []string
 }
 
 type TeamPermissionsService interface {
@@ -104,26 +154,20 @@ type User struct {
 // HasGlobalAccess checks user access with globally assigned permissions only
 func HasGlobalAccess(ac AccessControl, service Service, c *contextmodel.ReqContext) func(evaluator Evaluator) bool {
 	return func(evaluator Evaluator) bool {
-		userCopy := *c.SignedInUser
-		userCopy.OrgID = GlobalOrgID
-		userCopy.OrgRole = ""
-		userCopy.OrgName = ""
-		if userCopy.Permissions[GlobalOrgID] == nil {
-			permissions, err := service.GetUserPermissions(c.Req.Context(), &userCopy, Options{})
-			if err != nil {
-				c.Logger.Error("Failed fetching permissions for user", "userID", userCopy.UserID, "error", err)
-			}
-			userCopy.Permissions[GlobalOrgID] = GroupScopesByAction(permissions)
+		var targetOrgID int64 = GlobalOrgID
+		tmpUser, err := makeTmpUser(c.Req.Context(), service, nil, nil, c.SignedInUser, targetOrgID)
+		if err != nil {
+			deny(c, nil, fmt.Errorf("failed to authenticate user in target org: %w", err))
 		}
 
-		hasAccess, err := ac.Evaluate(c.Req.Context(), &userCopy, evaluator)
+		hasAccess, err := ac.Evaluate(c.Req.Context(), tmpUser, evaluator)
 		if err != nil {
 			c.Logger.Error("Error from access control system", "error", err)
 			return false
 		}
 
 		// set on user so we don't fetch global permissions every time this is called
-		c.SignedInUser.Permissions[GlobalOrgID] = userCopy.Permissions[GlobalOrgID]
+		c.SignedInUser.Permissions[tmpUser.GetOrgID()] = tmpUser.GetPermissions()
 
 		return hasAccess
 	}
@@ -371,6 +415,10 @@ func GetOrgRoles(user identity.Requester) []string {
 	roles := []string{string(user.GetOrgRole())}
 
 	if user.GetIsGrafanaAdmin() {
+		if user.GetOrgID() == GlobalOrgID {
+			// A server admin is the admin of the global organization
+			return []string{RoleGrafanaAdmin, string(org.RoleAdmin)}
+		}
 		roles = append(roles, RoleGrafanaAdmin)
 	}
 

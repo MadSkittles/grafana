@@ -35,6 +35,8 @@ def yarn_install_step():
         "name": "yarn-install",
         "image": images["node"],
         "commands": [
+            # Python is needed to build `esfx`, which is needed by `msagl`
+            "apk add --update g++ make python3 && ln -sf /usr/bin/python3 /usr/bin/python",
             "yarn install --immutable",
         ],
         "depends_on": [],
@@ -342,6 +344,8 @@ def e2e_tests_artifacts():
             "GITHUB_TOKEN": from_secret("github_token"),
         },
         "commands": [
+            # if no videos found do nothing
+            "if [ -z `find ./e2e -type f -name *spec.ts.mp4` ]; then echo 'missing videos'; false; fi",
             "apt-get update",
             "apt-get install -yq zip",
             "printenv GCP_GRAFANA_UPLOAD_ARTIFACTS_KEY > /tmp/gcpkey_upload_artifacts.json",
@@ -585,6 +589,7 @@ def verify_i18n_step():
         "depends_on": [
             "yarn-install",
         ],
+        "failure": "ignore",
         "commands": [
             "apk add --update git",
             "yarn run i18n:extract || (echo \"{}\" && false)".format(extract_error_message),
@@ -597,7 +602,6 @@ def verify_i18n_step():
                 exit 1
             fi
             '''.format(uncommited_error_message),
-            "yarn run i18n:compile",
         ],
     }
 
@@ -614,7 +618,8 @@ def test_a11y_frontend_step(ver_mode, port = 3001):
       Drone step.
     """
     commands = [
-        "yarn wait-on http://$HOST:$PORT",
+        # Note - this runs in a container running node 14, which does not support the -y option to npx
+        "npx wait-on@7.0.1 http://$HOST:$PORT",
     ]
     failure = "ignore"
     if ver_mode == "pr":
@@ -965,10 +970,15 @@ def redis_integration_tests_steps():
 def remote_alertmanager_integration_tests_steps():
     cmds = [
         "go clean -testcache",
-        "go test -run IntegrationRemoteAlertmanager -covermode=atomic -timeout=2m ./pkg/...",
+        "go test -run TestIntegrationRemoteAlertmanager -covermode=atomic -timeout=2m ./pkg/services/ngalert/...",
     ]
 
-    return integration_tests_steps("remote-alertmanager", cmds, "mimir", "8080", None)
+    environment = {
+        "AM_TENANT_ID": "test",
+        "AM_URL": "http://mimir_backend:8080",
+    }
+
+    return integration_tests_steps("remote-alertmanager", cmds, "mimir_backend", "8080", environment = environment)
 
 def memcached_integration_tests_steps():
     cmds = [

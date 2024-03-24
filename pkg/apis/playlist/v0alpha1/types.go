@@ -4,11 +4,6 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-// GroupName is the group name for this API.
-const GroupName = "playlist.x.grafana.com"
-const VersionID = "v0alpha1" //
-const APIVersion = GroupName + "/" + VersionID
-
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
 type Playlist struct {
 	metav1.TypeMeta `json:",inline"`
@@ -41,12 +36,16 @@ type Spec struct {
 	Items []Item `json:"items,omitempty"`
 }
 
+// Type of the item.
+// +enum
+type ItemType string
+
 // Defines values for ItemType.
 const (
 	ItemTypeDashboardByTag ItemType = "dashboard_by_tag"
 	ItemTypeDashboardByUid ItemType = "dashboard_by_uid"
 
-	// deprecated -- should use UID
+	// Deprecated -- should use UID
 	ItemTypeDashboardById ItemType = "dashboard_by_id"
 )
 
@@ -65,6 +64,3 @@ type Item struct {
 	//  - dashboard_by_uid: The value is the dashboard UID
 	Value string `json:"value"`
 }
-
-// Type of the item.
-type ItemType string

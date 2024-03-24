@@ -1,3 +1,5 @@
+import { randomLcg } from 'd3-random';
+
 import {
   FieldColorModeId,
   FieldDTO,
@@ -7,10 +9,13 @@ import {
   DataFrame,
 } from '@grafana/data';
 
-import { nodes, edges } from './testData/serviceMapResponse';
+import * as serviceMapResponseSmall from './testData/serviceMapResponse';
+import * as serviceMapResponsMedium from './testData/serviceMapResponseMedium';
 
-export function generateRandomNodes(count = 10) {
+export function generateRandomNodes(count = 10, seed?: number) {
   const nodes = [];
+  const edges: string[] = [];
+  const rand = randomLcg(seed);
 
   const root = {
     id: 'root',
@@ -20,7 +25,7 @@ export function generateRandomNodes(count = 10) {
     error: 0,
     stat1: Math.random(),
     stat2: Math.random(),
-    edges: [] as any[],
+    edges,
   };
   nodes.push(root);
   const nodesWithoutMaxEdges = [root];
@@ -30,7 +35,7 @@ export function generateRandomNodes(count = 10) {
   for (let i = 1; i < count; i++) {
     const node = makeRandomNode(i);
     nodes.push(node);
-    const sourceIndex = Math.floor(Math.random() * Math.floor(nodesWithoutMaxEdges.length - 1));
+    const sourceIndex = Math.floor(rand() * Math.floor(nodesWithoutMaxEdges.length - 1));
     const source = nodesWithoutMaxEdges[sourceIndex];
     source.edges.push(node.id);
     if (source.edges.length >= maxEdges) {
@@ -42,8 +47,8 @@ export function generateRandomNodes(count = 10) {
   // Add some random edges to create possible cycle
   const additionalEdges = Math.floor(count / 2);
   for (let i = 0; i <= additionalEdges; i++) {
-    const sourceIndex = Math.floor(Math.random() * Math.floor(nodes.length - 1));
-    const targetIndex = Math.floor(Math.random() * Math.floor(nodes.length - 1));
+    const sourceIndex = Math.floor(rand() * Math.floor(nodes.length - 1));
+    const targetIndex = Math.floor(rand() * Math.floor(nodes.length - 1));
     if (sourceIndex === targetIndex || nodes[sourceIndex].id === '0' || nodes[targetIndex].id === '0') {
       continue;
     }
@@ -105,6 +110,10 @@ export function generateRandomNodes(count = 10) {
       values: [],
       type: FieldType.number,
     },
+    [NodeGraphDataFrameFieldNames.highlighted]: {
+      values: [],
+      type: FieldType.boolean,
+    },
   };
 
   const nodeFrame = new MutableDataFrame({
@@ -123,6 +132,8 @@ export function generateRandomNodes(count = 10) {
       { name: NodeGraphDataFrameFieldNames.source, values: [], type: FieldType.string, config: {} },
       { name: NodeGraphDataFrameFieldNames.target, values: [], type: FieldType.string, config: {} },
       { name: NodeGraphDataFrameFieldNames.mainStat, values: [], type: FieldType.number, config: {} },
+      { name: NodeGraphDataFrameFieldNames.highlighted, values: [], type: FieldType.boolean, config: {} },
+      { name: NodeGraphDataFrameFieldNames.thickness, values: [], type: FieldType.number, config: {} },
     ],
     meta: { preferredVisualisationType: 'nodeGraph' },
     length: 0,
@@ -139,7 +150,8 @@ export function generateRandomNodes(count = 10) {
     nodeFields.arc__errors.values.push(node.error);
     const rnd = Math.random();
     nodeFields[NodeGraphDataFrameFieldNames.icon].values.push(rnd > 0.9 ? 'database' : rnd < 0.1 ? 'cloud' : '');
-    nodeFields[NodeGraphDataFrameFieldNames.nodeRadius].values.push(rnd > 0.5 ? 30 : 40);
+    nodeFields[NodeGraphDataFrameFieldNames.nodeRadius].values.push(Math.max(rnd * 100, 30)); // ensure a minimum radius of 30 or icons will not fit well in the node
+    nodeFields[NodeGraphDataFrameFieldNames.highlighted].values.push(Math.random() > 0.5);
 
     for (const edge of node.edges) {
       const id = `${node.id}--${edge}`;
@@ -152,6 +164,8 @@ export function generateRandomNodes(count = 10) {
       edgesFrame.fields[1].values.push(node.id);
       edgesFrame.fields[2].values.push(edge);
       edgesFrame.fields[3].values.push(Math.random() * 100);
+      edgesFrame.fields[4].values.push(Math.random() > 0.5);
+      edgesFrame.fields[5].values.push(Math.ceil(Math.random() * 15));
     }
   }
   edgesFrame.length = edgesFrame.fields[0].values.length;
@@ -171,14 +185,16 @@ function makeRandomNode(index: number) {
     stat1: Math.random(),
     stat2: Math.random(),
     edges: [],
+    highlighted: Math.random() > 0.5,
   };
 }
 
-export function savedNodesResponse() {
-  return [new MutableDataFrame(nodes), new MutableDataFrame(edges)];
+export function savedNodesResponse(size: 'small' | 'medium'): [DataFrame, DataFrame] {
+  const response = size === 'small' ? serviceMapResponseSmall : serviceMapResponsMedium;
+  return [new MutableDataFrame(response.nodes), new MutableDataFrame(response.edges)];
 }
 
 // Generates node graph data but only returns the edges
-export function generateRandomEdges(count = 10) {
-  return generateRandomNodes(count)[1];
+export function generateRandomEdges(count = 10, seed = 1) {
+  return generateRandomNodes(count, seed)[1];
 }

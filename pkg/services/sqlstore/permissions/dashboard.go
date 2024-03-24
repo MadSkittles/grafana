@@ -3,13 +3,13 @@ package permissions
 import (
 	"bytes"
 	"fmt"
+	"slices"
 	"strings"
-
-	"golang.org/x/exp/slices"
 
 	"github.com/grafana/grafana/pkg/services/accesscontrol"
 	"github.com/grafana/grafana/pkg/services/auth/identity"
 	"github.com/grafana/grafana/pkg/services/dashboards"
+	"github.com/grafana/grafana/pkg/services/dashboards/dashboardaccess"
 	"github.com/grafana/grafana/pkg/services/featuremgmt"
 	"github.com/grafana/grafana/pkg/services/folder"
 	"github.com/grafana/grafana/pkg/services/login"
@@ -42,14 +42,14 @@ type PermissionsFilter interface {
 	Where() (string, []any)
 
 	buildClauses()
-	nestedFoldersSelectors(permSelector string, permSelectorArgs []any, leftTableCol string, rightTableCol string, orgID int64) (string, []any)
+	nestedFoldersSelectors(permSelector string, permSelectorArgs []any, leftTable string, Col string, rightTableCol string, orgID int64) (string, []any)
 }
 
-// NewAccessControlDashboardPermissionFilter creates a new AccessControlDashboardPermissionFilter that is configured with specific actions calculated based on the dashboards.PermissionType and query type
+// NewAccessControlDashboardPermissionFilter creates a new AccessControlDashboardPermissionFilter that is configured with specific actions calculated based on the dashboardaccess.PermissionType and query type
 // The filter is configured to use the new permissions filter (without subqueries) if the feature flag is enabled
 // The filter is configured to use the old permissions filter (with subqueries) if the feature flag is disabled
-func NewAccessControlDashboardPermissionFilter(user identity.Requester, permissionLevel dashboards.PermissionType, queryType string, features featuremgmt.FeatureToggles, recursiveQueriesAreSupported bool) PermissionsFilter {
-	needEdit := permissionLevel > dashboards.PERMISSION_VIEW
+func NewAccessControlDashboardPermissionFilter(user identity.Requester, permissionLevel dashboardaccess.PermissionType, queryType string, features featuremgmt.FeatureToggles, recursiveQueriesAreSupported bool) PermissionsFilter {
+	needEdit := permissionLevel > dashboardaccess.PERMISSION_VIEW
 
 	var folderActions []string
 	var dashboardActions []string
@@ -75,6 +75,8 @@ func NewAccessControlDashboardPermissionFilter(user identity.Requester, permissi
 				accesscontrol.ActionAlertingRuleCreate,
 			)
 		}
+	} else if queryType == searchstore.TypeAnnotation {
+		dashboardActions = append(dashboardActions, accesscontrol.ActionAnnotationsRead)
 	} else {
 		folderActions = append(folderActions, dashboards.ActionFoldersRead)
 		dashboardActions = append(dashboardActions, dashboards.ActionDashboardsRead)
@@ -85,7 +87,7 @@ func NewAccessControlDashboardPermissionFilter(user identity.Requester, permissi
 	}
 
 	var f PermissionsFilter
-	if features.IsEnabled(featuremgmt.FlagPermissionsFilterRemoveSubquery) {
+	if features.IsEnabledGlobally(featuremgmt.FlagPermissionsFilterRemoveSubquery) {
 		f = &accessControlDashboardPermissionFilterNoFolderSubquery{
 			accessControlDashboardPermissionFilter: accessControlDashboardPermissionFilter{
 				user: user, folderActions: folderActions, dashboardActions: dashboardActions, features: features,
@@ -202,18 +204,18 @@ func (f *accessControlDashboardPermissionFilter) buildClauses() {
 			}
 			permSelector.WriteRune(')')
 
-			switch f.features.IsEnabled(featuremgmt.FlagNestedFolders) {
+			switch f.features.IsEnabledGlobally(featuremgmt.FlagNestedFolders) {
 			case true:
 				if len(permSelectorArgs) > 0 {
 					switch f.recursiveQueriesAreSupported {
 					case true:
 						builder.WriteString("(dashboard.folder_id IN (SELECT d.id FROM dashboard as d ")
 						recQueryName := fmt.Sprintf("RecQry%d", len(f.recQueries))
-						f.addRecQry(recQueryName, permSelector.String(), permSelectorArgs)
+						f.addRecQry(recQueryName, permSelector.String(), permSelectorArgs, orgID)
 						builder.WriteString(fmt.Sprintf("WHERE d.org_id = ? AND d.uid IN (SELECT uid FROM %s)", recQueryName))
 						args = append(args, orgID)
 					default:
-						nestedFoldersSelectors, nestedFoldersArgs := f.nestedFoldersSelectors(permSelector.String(), permSelectorArgs, "dashboard.folder_id", "d.id", orgID)
+						nestedFoldersSelectors, nestedFoldersArgs := f.nestedFoldersSelectors(permSelector.String(), permSelectorArgs, "dashboard", "folder_id", "d.id", orgID)
 						builder.WriteRune('(')
 						builder.WriteString(nestedFoldersSelectors)
 						args = append(args, nestedFoldersArgs...)
@@ -281,17 +283,17 @@ func (f *accessControlDashboardPermissionFilter) buildClauses() {
 
 			permSelector.WriteRune(')')
 
-			switch f.features.IsEnabled(featuremgmt.FlagNestedFolders) {
+			switch f.features.IsEnabledGlobally(featuremgmt.FlagNestedFolders) {
 			case true:
 				if len(permSelectorArgs) > 0 {
 					switch f.recursiveQueriesAreSupported {
 					case true:
 						recQueryName := fmt.Sprintf("RecQry%d", len(f.recQueries))
-						f.addRecQry(recQueryName, permSelector.String(), permSelectorArgs)
+						f.addRecQry(recQueryName, permSelector.String(), permSelectorArgs, orgID)
 						builder.WriteString("(dashboard.uid IN ")
 						builder.WriteString(fmt.Sprintf("(SELECT uid FROM %s)", recQueryName))
 					default:
-						nestedFoldersSelectors, nestedFoldersArgs := f.nestedFoldersSelectors(permSelector.String(), permSelectorArgs, "dashboard.uid", "d.uid", orgID)
+						nestedFoldersSelectors, nestedFoldersArgs := f.nestedFoldersSelectors(permSelector.String(), permSelectorArgs, "dashboard", "uid", "d.uid", orgID)
 						builder.WriteRune('(')
 						builder.WriteString(nestedFoldersSelectors)
 						builder.WriteRune(')')
@@ -338,15 +340,17 @@ func (f *accessControlDashboardPermissionFilter) With() (string, []any) {
 	return sb.String(), params
 }
 
-func (f *accessControlDashboardPermissionFilter) addRecQry(queryName string, whereUIDSelect string, whereParams []any) {
+func (f *accessControlDashboardPermissionFilter) addRecQry(queryName string, whereUIDSelect string, whereParams []any, orgID int64) {
 	if f.recQueries == nil {
 		f.recQueries = make([]clause, 0, maximumRecursiveQueries)
 	}
 	c := make([]any, len(whereParams))
 	copy(c, whereParams)
+	c = append([]any{orgID}, c...)
 	f.recQueries = append(f.recQueries, clause{
+		// covered by UQE_folder_org_id_uid and UQE_folder_org_id_parent_uid_title
 		string: fmt.Sprintf(`%s AS (
-			SELECT uid, parent_uid, org_id FROM folder WHERE uid IN %s
+			SELECT uid, parent_uid, org_id FROM folder WHERE org_id = ? AND uid IN %s
 			UNION ALL SELECT f.uid, f.parent_uid, f.org_id FROM folder f INNER JOIN %s r ON f.parent_uid = r.uid and f.org_id = r.org_id
 		)`, queryName, whereUIDSelect, queryName),
 		params: c,
@@ -376,12 +380,13 @@ func actionsToCheck(actions []string, permissions map[string][]string, wildcards
 	return toCheck
 }
 
-func (f *accessControlDashboardPermissionFilter) nestedFoldersSelectors(permSelector string, permSelectorArgs []any, leftTableCol string, rightTableCol string, orgID int64) (string, []any) {
+func (f *accessControlDashboardPermissionFilter) nestedFoldersSelectors(permSelector string, permSelectorArgs []any, leftTable string, leftCol string, rightTableCol string, orgID int64) (string, []any) {
 	wheres := make([]string, 0, folder.MaxNestedFolderDepth+1)
 	args := make([]any, 0, len(permSelectorArgs)*(folder.MaxNestedFolderDepth+1))
 
 	joins := make([]string, 0, folder.MaxNestedFolderDepth+2)
 
+	// covered by UQE_folder_org_id_uid
 	tmpl := "INNER JOIN folder %s ON %s.%s = %s.uid AND %s.org_id = %s.org_id "
 
 	prev := "d"
@@ -391,8 +396,9 @@ func (f *accessControlDashboardPermissionFilter) nestedFoldersSelectors(permSele
 		s := fmt.Sprintf(tmpl, t, prev, onCol, t, prev, t)
 		joins = append(joins, s)
 
-		wheres = append(wheres, fmt.Sprintf("(%s IN (SELECT %s FROM dashboard d %s WHERE %s.org_id = ? AND %s.uid IN %s)", leftTableCol, rightTableCol, strings.Join(joins, " "), t, t, permSelector))
-		args = append(args, orgID)
+		// covered by UQE_folder_org_id_uid
+		wheres = append(wheres, fmt.Sprintf("(%s.org_id = ? AND %s.%s IN (SELECT %s FROM dashboard d %s WHERE %s.org_id = ? AND %s.uid IN %s)", leftTable, leftTable, leftCol, rightTableCol, strings.Join(joins, " "), t, t, permSelector))
+		args = append(args, orgID, orgID)
 		args = append(args, permSelectorArgs...)
 
 		prev = t

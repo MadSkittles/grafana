@@ -47,7 +47,8 @@ const RuleEditor = ({ match }: RuleEditorProps) => {
   const dispatch = useDispatch();
   const [searchParams] = useURLSearchParams();
 
-  const { id, type } = match.params;
+  const { type } = match.params;
+  const id = ruleId.getRuleIdFromPathname(match.params);
   const identifier = ruleId.tryParse(id, true);
 
   const copyFromId = searchParams.get('copyFrom') ?? undefined;
@@ -89,7 +90,7 @@ const RuleEditor = ({ match }: RuleEditorProps) => {
   }, [canCreateCloudRules, canCreateGrafanaRules, canEditRules, copyFromIdentifier, id, identifier, loading]);
 
   return (
-    <AlertingPageWrapper isLoading={loading} pageId="alert-list" pageNav={getPageNav(identifier, type)}>
+    <AlertingPageWrapper isLoading={loading} navId="alert-list" pageNav={getPageNav(identifier, type)}>
       {getContent()}
     </AlertingPageWrapper>
   );

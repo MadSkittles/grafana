@@ -16,6 +16,7 @@ import {
   systemDateFormats,
   SystemDateFormatSettings,
   getThemeById,
+  AngularMeta,
 } from '@grafana/data';
 
 export interface AzureSettings {
@@ -30,11 +31,12 @@ export type AppPluginConfig = {
   path: string;
   version: string;
   preload: boolean;
-  angularDetected?: boolean;
+  angular: AngularMeta;
 };
 
 export class GrafanaBootConfig implements GrafanaConfig {
   publicDashboardAccessToken?: string;
+  publicDashboardsEnabled = true;
   snapshotEnabled = true;
   datasources: { [str: string]: DataSourceInstanceSettings } = {};
   panels: { [key: string]: PanelPluginMeta } = {};
@@ -43,6 +45,7 @@ export class GrafanaBootConfig implements GrafanaConfig {
   minRefreshInterval = '';
   appUrl = '';
   appSubUrl = '';
+  namespace = 'default';
   windowTitlePrefix = '';
   buildInfo: BuildInfo;
   newPanelTitle = '';
@@ -92,6 +95,7 @@ export class GrafanaBootConfig implements GrafanaConfig {
   theme2: GrafanaTheme2;
   featureToggles: FeatureToggles = {};
   anonymousEnabled = false;
+  anonymousDeviceLimit: number | undefined = undefined;
   licenseInfo: LicenseInfo = {} as LicenseInfo;
   rendererAvailable = false;
   rendererVersion = '';
@@ -143,6 +147,9 @@ export class GrafanaBootConfig implements GrafanaConfig {
   reporting = {
     enabled: true,
   };
+  analytics = {
+    enabled: true,
+  };
   googleAnalyticsId: undefined;
   googleAnalytics4Id: undefined;
   googleAnalytics4SendManualPageViews = false;
@@ -150,6 +157,7 @@ export class GrafanaBootConfig implements GrafanaConfig {
   rudderstackDataPlaneUrl: undefined;
   rudderstackSdkUrl: undefined;
   rudderstackConfigUrl: undefined;
+  rudderstackIntegrationsUrl: undefined;
   sqlConnectionLimits = {
     maxOpenConns: 100,
     maxIdleConns: 100,
@@ -158,6 +166,8 @@ export class GrafanaBootConfig implements GrafanaConfig {
 
   tokenExpirationDayLimit: undefined;
   disableFrontendSandboxForPlugins: string[] = [];
+  sharedWithMeFolderUID: string | undefined;
+  rootFolderUID: string | undefined;
 
   constructor(options: GrafanaBootConfig) {
     this.bootData = options.bootData;

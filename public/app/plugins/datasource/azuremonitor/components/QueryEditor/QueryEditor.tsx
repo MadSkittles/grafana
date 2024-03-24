@@ -4,7 +4,7 @@ import React, { useCallback, useMemo, useState } from 'react';
 
 import { QueryEditorProps } from '@grafana/data';
 import { reportInteraction } from '@grafana/runtime';
-import { Alert, Button, CodeEditor } from '@grafana/ui';
+import { Alert, Button, CodeEditor, Space } from '@grafana/ui';
 
 import AzureMonitorDatasource from '../../datasource';
 import {
@@ -20,7 +20,6 @@ import LogsQueryEditor from '../LogsQueryEditor';
 import { AzureCheatSheetModal } from '../LogsQueryEditor/AzureCheatSheetModal';
 import NewMetricsQueryEditor from '../MetricsQueryEditor/MetricsQueryEditor';
 import { QueryHeader } from '../QueryHeader';
-import { Space } from '../Space';
 import TracesQueryEditor from '../TracesQueryEditor';
 
 import usePreparedQuery from './usePreparedQuery';
@@ -142,12 +141,14 @@ const EditorForQueryType = ({
     case AzureQueryType.LogAnalytics:
       return (
         <LogsQueryEditor
+          data={data}
           subscriptionId={subscriptionId}
           query={query}
           datasource={datasource}
           onChange={onChange}
           variableOptionGroup={variableOptionGroup}
           setError={setError}
+          timeRange={range}
         />
       );
 

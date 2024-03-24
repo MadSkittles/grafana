@@ -65,7 +65,7 @@ export interface Props {
   isDraggable?: boolean;
   width: number;
   height: number;
-  onInstanceStateChange: (value: any) => void;
+  onInstanceStateChange: (value: unknown) => void;
   timezone?: string;
   hideMenu?: boolean;
 }
@@ -129,7 +129,7 @@ export class PanelStateWrapper extends PureComponent<Props, State> {
   // Due to a mutable panel model we get the sync settings via function that proactively reads from the model
   getSync = () => (this.props.isEditing ? DashboardCursorSync.Off : this.props.dashboard.graphTooltip);
 
-  onInstanceStateChange = (value: any) => {
+  onInstanceStateChange = (value: unknown) => {
     this.props.onInstanceStateChange(value);
 
     this.setState({
@@ -340,7 +340,7 @@ export class PanelStateWrapper extends PureComponent<Props, State> {
   onRefresh = () => {
     const { dashboard, panel, isInView, width } = this.props;
 
-    if (!isInView) {
+    if (!dashboard.snapshot && !isInView) {
       panel.refreshWhenInView = true;
       return;
     }
@@ -460,7 +460,12 @@ export class PanelStateWrapper extends PureComponent<Props, State> {
   };
 
   shouldSignalRenderingCompleted(loadingState: LoadingState, pluginMeta: PanelPluginMeta) {
-    return loadingState === LoadingState.Done || loadingState === LoadingState.Error || pluginMeta.skipDataQuery;
+    return (
+      loadingState === LoadingState.Done ||
+      loadingState === LoadingState.Streaming ||
+      loadingState === LoadingState.Error ||
+      pluginMeta.skipDataQuery
+    );
   }
 
   skipFirstRender(loadingState: LoadingState) {

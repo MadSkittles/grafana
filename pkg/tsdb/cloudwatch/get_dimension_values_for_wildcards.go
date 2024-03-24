@@ -1,10 +1,10 @@
 package cloudwatch
 
 import (
+	"context"
 	"fmt"
 
 	"github.com/grafana/grafana-plugin-sdk-go/backend"
-	"github.com/grafana/grafana/pkg/infra/log"
 	"github.com/grafana/grafana/pkg/tsdb/cloudwatch/clients"
 	"github.com/grafana/grafana/pkg/tsdb/cloudwatch/models"
 	"github.com/grafana/grafana/pkg/tsdb/cloudwatch/models/resources"
@@ -13,9 +13,14 @@ import (
 )
 
 // getDimensionValues gets the actual dimension values for dimensions with a wildcard
-func (e *cloudWatchExecutor) getDimensionValuesForWildcards(pluginCtx backend.PluginContext, region string,
-	client models.CloudWatchMetricsAPIProvider, origQueries []*models.CloudWatchQuery, tagValueCache *cache.Cache, logger log.Logger) ([]*models.CloudWatchQuery, error) {
-	metricsClient := clients.NewMetricsClient(client, e.cfg)
+func (e *cloudWatchExecutor) getDimensionValuesForWildcards(ctx context.Context, pluginCtx backend.PluginContext, region string,
+	client models.CloudWatchMetricsAPIProvider, origQueries []*models.CloudWatchQuery, tagValueCache *cache.Cache) ([]*models.CloudWatchQuery, error) {
+	instance, err := e.getInstance(ctx, pluginCtx)
+	if err != nil {
+		return nil, err
+	}
+
+	metricsClient := clients.NewMetricsClient(client, instance.Settings.GrafanaSettings.ListMetricsPageLimit)
 	service := services.NewListMetricsService(metricsClient)
 	// create copies of the original query. All the fields besides Dimensions are primitives
 	queries := copyQueries(origQueries)
@@ -34,12 +39,12 @@ func (e *cloudWatchExecutor) getDimensionValuesForWildcards(pluginCtx backend.Pl
 			cacheKey := fmt.Sprintf("%s-%s-%s-%s-%s", region, accountID, query.Namespace, query.MetricName, dimensionKey)
 			cachedDimensions, found := tagValueCache.Get(cacheKey)
 			if found {
-				logger.Debug("Fetching dimension values from cache")
+				e.logger.FromContext(ctx).Debug("Fetching dimension values from cache")
 				query.Dimensions[dimensionKey] = cachedDimensions.([]string)
 				continue
 			}
 
-			logger.Debug("Cache miss, fetching dimension values from AWS")
+			e.logger.FromContext(ctx).Debug("Cache miss, fetching dimension values from AWS")
 			request := resources.DimensionValuesRequest{
 				ResourceRequest: &resources.ResourceRequest{
 					Region:    region,
@@ -50,7 +55,7 @@ func (e *cloudWatchExecutor) getDimensionValuesForWildcards(pluginCtx backend.Pl
 				DimensionKey: dimensionKey,
 			}
 
-			dimensions, err := service.GetDimensionValuesByDimensionFilter(request)
+			dimensions, err := service.GetDimensionValuesByDimensionFilter(ctx, request)
 			if err != nil {
 				return nil, err
 			}

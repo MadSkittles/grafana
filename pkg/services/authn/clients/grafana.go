@@ -92,7 +92,7 @@ func (c *Grafana) AuthenticatePassword(ctx context.Context, r *authn.Request, us
 	usr, err := c.userService.GetByLogin(ctx, &user.GetUserByLoginQuery{LoginOrEmail: username})
 	if err != nil {
 		if errors.Is(err, user.ErrUserNotFound) {
-			return nil, errIdentityNotFound.Errorf("no user fund: %w", err)
+			return nil, errIdentityNotFound.Errorf("no user found: %w", err)
 		}
 		return nil, err
 	}
@@ -100,7 +100,7 @@ func (c *Grafana) AuthenticatePassword(ctx context.Context, r *authn.Request, us
 	// user was found so set auth module in req metadata
 	r.SetMeta(authn.MetaKeyAuthModule, "grafana")
 
-	if ok := comparePassword(password, usr.Salt, usr.Password); !ok {
+	if ok := comparePassword(password, usr.Salt, string(usr.Password)); !ok {
 		return nil, errInvalidPassword.Errorf("invalid password")
 	}
 

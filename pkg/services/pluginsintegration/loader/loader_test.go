@@ -68,7 +68,7 @@ func TestLoader_Load(t *testing.T) {
 		{
 			name:        "Load a Core plugin",
 			class:       plugins.ClassCore,
-			cfg:         &config.Cfg{},
+			cfg:         &config.Cfg{Features: featuremgmt.WithFeatures()},
 			pluginPaths: []string{filepath.Join(corePluginDir(t), "app/plugins/datasource/cloudwatch")},
 			want: []*plugins.Plugin{
 				{
@@ -83,8 +83,8 @@ func TestLoader_Load(t *testing.T) {
 							},
 							Description: "Data source for Amazon AWS monitoring service",
 							Logos: plugins.Logos{
-								Small: "/public/app/plugins/datasource/cloudwatch/img/amazon-web-services.png",
-								Large: "/public/app/plugins/datasource/cloudwatch/img/amazon-web-services.png",
+								Small: "public/app/plugins/datasource/cloudwatch/img/amazon-web-services.png",
+								Large: "public/app/plugins/datasource/cloudwatch/img/amazon-web-services.png",
 							},
 						},
 						Includes: []*plugins.Includes{
@@ -106,9 +106,8 @@ func TestLoader_Load(t *testing.T) {
 						Backend:      true,
 						QueryOptions: map[string]bool{"minInterval": true},
 					},
-					Module:  "core:plugin/cloudwatch",
-					BaseURL: "/public/app/plugins/datasource/cloudwatch",
-
+					Module:    "core:plugin/cloudwatch",
+					BaseURL:   "public/app/plugins/datasource/cloudwatch",
 					FS:        mustNewStaticFSForTests(t, filepath.Join(corePluginDir(t), "app/plugins/datasource/cloudwatch")),
 					Signature: plugins.SignatureStatusInternal,
 					Class:     plugins.ClassCore,
@@ -118,7 +117,7 @@ func TestLoader_Load(t *testing.T) {
 		{
 			name:        "Load a Bundled plugin",
 			class:       plugins.ClassBundled,
-			cfg:         &config.Cfg{},
+			cfg:         &config.Cfg{Features: featuremgmt.WithFeatures()},
 			pluginPaths: []string{filepath.Join(testDataDir(t), "valid-v2-signature")},
 			want: []*plugins.Plugin{
 				{
@@ -133,8 +132,8 @@ func TestLoader_Load(t *testing.T) {
 							},
 							Version: "1.0.0",
 							Logos: plugins.Logos{
-								Small: "/public/img/icn-datasource.svg",
-								Large: "/public/img/icn-datasource.svg",
+								Small: "public/img/icn-datasource.svg",
+								Large: "public/img/icn-datasource.svg",
 							},
 							Description: "Test",
 						},
@@ -146,8 +145,8 @@ func TestLoader_Load(t *testing.T) {
 						Backend:    true,
 						State:      "alpha",
 					},
-					Module:        "/public/plugins/test-datasource/module.js",
-					BaseURL:       "/public/plugins/test-datasource",
+					Module:        "public/plugins/test-datasource/module.js",
+					BaseURL:       "public/plugins/test-datasource",
 					FS:            mustNewStaticFSForTests(t, filepath.Join(testDataDir(t), "valid-v2-signature/plugin/")),
 					Signature:     "valid",
 					SignatureType: plugins.SignatureTypeGrafana,
@@ -155,10 +154,11 @@ func TestLoader_Load(t *testing.T) {
 					Class:         plugins.ClassBundled,
 				},
 			},
-		}, {
+		},
+		{
 			name:        "Load plugin with symbolic links",
 			class:       plugins.ClassExternal,
-			cfg:         &config.Cfg{},
+			cfg:         &config.Cfg{Features: featuremgmt.WithFeatures()},
 			pluginPaths: []string{filepath.Join(testDataDir(t), "symbolic-plugin-dirs")},
 			want: []*plugins.Plugin{
 				{
@@ -172,8 +172,8 @@ func TestLoader_Load(t *testing.T) {
 								URL:  "http://test.com",
 							},
 							Logos: plugins.Logos{
-								Small: "/public/plugins/test-app/img/logo_small.png",
-								Large: "/public/plugins/test-app/img/logo_large.png",
+								Small: "public/plugins/test-app/img/logo_small.png",
+								Large: "public/plugins/test-app/img/logo_large.png",
 							},
 							Links: []plugins.InfoLink{
 								{Name: "Project site", URL: "http://project.com"},
@@ -181,11 +181,12 @@ func TestLoader_Load(t *testing.T) {
 							},
 							Description: "Official Grafana Test App & Dashboard bundle",
 							Screenshots: []plugins.Screenshots{
-								{Path: "/public/plugins/test-app/img/screenshot1.png", Name: "img1"},
-								{Path: "/public/plugins/test-app/img/screenshot2.png", Name: "img2"},
+								{Path: "public/plugins/test-app/img/screenshot1.png", Name: "img1"},
+								{Path: "public/plugins/test-app/img/screenshot2.png", Name: "img2"},
 							},
-							Version: "1.0.0",
-							Updated: "2015-02-10",
+							Version:  "1.0.0",
+							Updated:  "2015-02-10",
+							Keywords: []string{"test"},
 						},
 						Dependencies: plugins.Dependencies{
 							GrafanaVersion: "3.x.x",
@@ -213,7 +214,8 @@ func TestLoader_Load(t *testing.T) {
 								Name: "Nginx Panel",
 								Type: string(plugins.TypePanel),
 								Role: org.RoleViewer,
-								Slug: "nginx-panel"},
+								Slug: "nginx-panel",
+							},
 							{
 								Name: "Nginx Datasource",
 								Type: string(plugins.TypeDataSource),
@@ -223,19 +225,21 @@ func TestLoader_Load(t *testing.T) {
 						},
 					},
 					Class:         plugins.ClassExternal,
-					Module:        "/public/plugins/test-app/module.js",
-					BaseURL:       "/public/plugins/test-app",
+					Module:        "public/plugins/test-app/module.js",
+					BaseURL:       "public/plugins/test-app",
 					FS:            mustNewStaticFSForTests(t, filepath.Join(testDataDir(t), "includes-symlinks")),
 					Signature:     "valid",
 					SignatureType: plugins.SignatureTypeGrafana,
 					SignatureOrg:  "Grafana Labs",
 				},
 			},
-		}, {
+		},
+		{
 			name:  "Load an unsigned plugin (development)",
 			class: plugins.ClassExternal,
 			cfg: &config.Cfg{
-				DevMode: true,
+				DevMode:  true,
+				Features: featuremgmt.WithFeatures(),
 			},
 			pluginPaths: []string{filepath.Join(testDataDir(t), "unsigned-datasource")},
 			want: []*plugins.Plugin{
@@ -250,8 +254,8 @@ func TestLoader_Load(t *testing.T) {
 								URL:  "https://grafana.com",
 							},
 							Logos: plugins.Logos{
-								Small: "/public/img/icn-datasource.svg",
-								Large: "/public/img/icn-datasource.svg",
+								Small: "public/img/icn-datasource.svg",
+								Large: "public/img/icn-datasource.svg",
 							},
 							Description: "Test",
 						},
@@ -263,16 +267,17 @@ func TestLoader_Load(t *testing.T) {
 						State:   plugins.ReleaseStateAlpha,
 					},
 					Class:     plugins.ClassExternal,
-					Module:    "/public/plugins/test-datasource/module.js",
-					BaseURL:   "/public/plugins/test-datasource",
+					Module:    "public/plugins/test-datasource/module.js",
+					BaseURL:   "public/plugins/test-datasource",
 					FS:        mustNewStaticFSForTests(t, filepath.Join(testDataDir(t), "unsigned-datasource/plugin")),
 					Signature: "unsigned",
 				},
 			},
-		}, {
+		},
+		{
 			name:        "Load an unsigned plugin (production)",
 			class:       plugins.ClassExternal,
-			cfg:         &config.Cfg{},
+			cfg:         &config.Cfg{Features: featuremgmt.WithFeatures()},
 			pluginPaths: []string{filepath.Join(testDataDir(t), "unsigned-datasource")},
 			want:        []*plugins.Plugin{},
 			pluginErrors: map[string]*plugins.SignatureError{
@@ -287,6 +292,7 @@ func TestLoader_Load(t *testing.T) {
 			class: plugins.ClassExternal,
 			cfg: &config.Cfg{
 				PluginsAllowUnsigned: []string{"test-datasource"},
+				Features:             featuremgmt.WithFeatures(),
 			},
 			pluginPaths: []string{filepath.Join(testDataDir(t), "unsigned-datasource")},
 			want: []*plugins.Plugin{
@@ -301,8 +307,8 @@ func TestLoader_Load(t *testing.T) {
 								URL:  "https://grafana.com",
 							},
 							Logos: plugins.Logos{
-								Small: "/public/img/icn-datasource.svg",
-								Large: "/public/img/icn-datasource.svg",
+								Small: "public/img/icn-datasource.svg",
+								Large: "public/img/icn-datasource.svg",
 							},
 							Description: "Test",
 						},
@@ -314,8 +320,8 @@ func TestLoader_Load(t *testing.T) {
 						State:   plugins.ReleaseStateAlpha,
 					},
 					Class:     plugins.ClassExternal,
-					Module:    "/public/plugins/test-datasource/module.js",
-					BaseURL:   "/public/plugins/test-datasource",
+					Module:    "public/plugins/test-datasource/module.js",
+					BaseURL:   "public/plugins/test-datasource",
 					FS:        mustNewStaticFSForTests(t, filepath.Join(testDataDir(t), "unsigned-datasource/plugin")),
 					Signature: plugins.SignatureStatusUnsigned,
 				},
@@ -324,7 +330,7 @@ func TestLoader_Load(t *testing.T) {
 		{
 			name:        "Load a plugin with v1 manifest should return signatureInvalid",
 			class:       plugins.ClassExternal,
-			cfg:         &config.Cfg{},
+			cfg:         &config.Cfg{Features: featuremgmt.WithFeatures()},
 			pluginPaths: []string{filepath.Join(testDataDir(t), "lacking-files")},
 			want:        []*plugins.Plugin{},
 			pluginErrors: map[string]*plugins.SignatureError{
@@ -339,6 +345,7 @@ func TestLoader_Load(t *testing.T) {
 			class: plugins.ClassExternal,
 			cfg: &config.Cfg{
 				PluginsAllowUnsigned: []string{"test-datasource"},
+				Features:             featuremgmt.WithFeatures(),
 			},
 			pluginPaths: []string{filepath.Join(testDataDir(t), "lacking-files")},
 			want:        []*plugins.Plugin{},
@@ -354,6 +361,7 @@ func TestLoader_Load(t *testing.T) {
 			class: plugins.ClassExternal,
 			cfg: &config.Cfg{
 				PluginsAllowUnsigned: []string{"test-datasource"},
+				Features:             featuremgmt.WithFeatures(),
 			},
 			pluginPaths: []string{filepath.Join(testDataDir(t), "invalid-v2-missing-file")},
 			want:        []*plugins.Plugin{},
@@ -369,6 +377,7 @@ func TestLoader_Load(t *testing.T) {
 			class: plugins.ClassExternal,
 			cfg: &config.Cfg{
 				PluginsAllowUnsigned: []string{"test-datasource"},
+				Features:             featuremgmt.WithFeatures(),
 			},
 			pluginPaths: []string{filepath.Join(testDataDir(t), "invalid-v2-extra-file")},
 			want:        []*plugins.Plugin{},
@@ -384,47 +393,50 @@ func TestLoader_Load(t *testing.T) {
 			class: plugins.ClassExternal,
 			cfg: &config.Cfg{
 				PluginsAllowUnsigned: []string{"test-app"},
+				Features:             featuremgmt.WithFeatures(),
 			},
 			pluginPaths: []string{filepath.Join(testDataDir(t), "test-app-with-includes")},
 			want: []*plugins.Plugin{
-				{JSONData: plugins.JSONData{
-					ID:   "test-app",
-					Type: plugins.TypeApp,
-					Name: "Test App",
-					Info: plugins.Info{
-						Author: plugins.InfoLink{
-							Name: "Test Inc.",
-							URL:  "http://test.com",
+				{
+					JSONData: plugins.JSONData{
+						ID:   "test-app",
+						Type: plugins.TypeApp,
+						Name: "Test App",
+						Info: plugins.Info{
+							Author: plugins.InfoLink{
+								Name: "Test Inc.",
+								URL:  "http://test.com",
+							},
+							Description: "Official Grafana Test App & Dashboard bundle",
+							Version:     "1.0.0",
+							Links: []plugins.InfoLink{
+								{Name: "Project site", URL: "http://project.com"},
+								{Name: "License & Terms", URL: "http://license.com"},
+							},
+							Logos: plugins.Logos{
+								Small: "public/img/icn-app.svg",
+								Large: "public/img/icn-app.svg",
+							},
+							Updated:  "2015-02-10",
+							Keywords: []string{"test"},
 						},
-						Description: "Official Grafana Test App & Dashboard bundle",
-						Version:     "1.0.0",
-						Links: []plugins.InfoLink{
-							{Name: "Project site", URL: "http://project.com"},
-							{Name: "License & Terms", URL: "http://license.com"},
+						Dependencies: plugins.Dependencies{
+							GrafanaDependency: ">=8.0.0",
+							GrafanaVersion:    "*",
+							Plugins:           []plugins.Dependency{},
 						},
-						Logos: plugins.Logos{
-							Small: "/public/img/icn-app.svg",
-							Large: "/public/img/icn-app.svg",
+						Includes: []*plugins.Includes{
+							{Name: "Nginx Memory", Path: "dashboards/memory.json", Type: "dashboard", Role: org.RoleViewer, Slug: "nginx-memory"},
+							{Name: "Root Page (react)", Type: "page", Role: org.RoleViewer, Path: "/a/my-simple-app", DefaultNav: true, AddToNav: true, Slug: "root-page-react"},
 						},
-						Updated: "2015-02-10",
+						Backend: false,
 					},
-					Dependencies: plugins.Dependencies{
-						GrafanaDependency: ">=8.0.0",
-						GrafanaVersion:    "*",
-						Plugins:           []plugins.Dependency{},
-					},
-					Includes: []*plugins.Includes{
-						{Name: "Nginx Memory", Path: "dashboards/memory.json", Type: "dashboard", Role: org.RoleViewer, Slug: "nginx-memory"},
-						{Name: "Root Page (react)", Type: "page", Role: org.RoleViewer, Path: "/a/my-simple-app", DefaultNav: true, AddToNav: true, Slug: "root-page-react"},
-					},
-					Backend: false,
-				},
 					DefaultNavURL: "/plugins/test-app/page/root-page-react",
 					FS:            mustNewStaticFSForTests(t, filepath.Join(testDataDir(t), "test-app-with-includes")),
 					Class:         plugins.ClassExternal,
 					Signature:     plugins.SignatureStatusUnsigned,
-					Module:        "/public/plugins/test-app/module.js",
-					BaseURL:       "/public/plugins/test-app",
+					Module:        "public/plugins/test-app/module.js",
+					BaseURL:       "public/plugins/test-app",
 				},
 			},
 		},
@@ -434,6 +446,7 @@ func TestLoader_Load(t *testing.T) {
 			cfg: &config.Cfg{
 				DevMode:          true,
 				GrafanaAppSubURL: "grafana",
+				Features:         featuremgmt.WithFeatures(),
 			},
 			pluginPaths: []string{filepath.Join(testDataDir(t), "unsigned-datasource")},
 			want: []*plugins.Plugin{
@@ -448,8 +461,8 @@ func TestLoader_Load(t *testing.T) {
 								URL:  "https://grafana.com",
 							},
 							Logos: plugins.Logos{
-								Small: "/grafana/public/img/icn-datasource.svg",
-								Large: "/grafana/public/img/icn-datasource.svg",
+								Small: "public/img/icn-datasource.svg",
+								Large: "public/img/icn-datasource.svg",
 							},
 							Description: "Test",
 						},
@@ -461,8 +474,8 @@ func TestLoader_Load(t *testing.T) {
 						State:   plugins.ReleaseStateAlpha,
 					},
 					Class:     plugins.ClassExternal,
-					Module:    "/grafana/public/plugins/test-datasource/module.js",
-					BaseURL:   "/grafana/public/plugins/test-datasource",
+					Module:    "public/plugins/test-datasource/module.js",
+					BaseURL:   "public/plugins/test-datasource",
 					FS:        mustNewStaticFSForTests(t, filepath.Join(testDataDir(t), "unsigned-datasource/plugin")),
 					Signature: plugins.SignatureStatusUnsigned,
 				},
@@ -498,12 +511,13 @@ func TestLoader_Load_ExternalRegistration(t *testing.T) {
 	boolPtr := func(b bool) *bool { return &b }
 	stringPtr := func(s string) *string { return &s }
 
-	t.Run("Load a plugin with external registration", func(t *testing.T) {
+	t.Run("Load a plugin with oauth client registration", func(t *testing.T) {
 		cfg := &config.Cfg{
-			Features:             fakes.NewFakeFeatureToggles(featuremgmt.FlagExternalServiceAuth),
+			Features:             featuremgmt.WithFeatures(featuremgmt.FlagExternalServiceAuth),
 			PluginsAllowUnsigned: []string{"grafana-test-datasource"},
+			AWSAssumeRoleEnabled: true,
 		}
-		pluginPaths := []string{filepath.Join(testDataDir(t), "external-registration")}
+		pluginPaths := []string{filepath.Join(testDataDir(t), "oauth-external-registration")}
 		expected := []*plugins.Plugin{
 			{JSONData: plugins.JSONData{
 				ID:         "grafana-test-datasource",
@@ -518,8 +532,8 @@ func TestLoader_Load_ExternalRegistration(t *testing.T) {
 					},
 					Version: "1.0.0",
 					Logos: plugins.Logos{
-						Small: "/public/plugins/grafana-test-datasource/img/ds.svg",
-						Large: "/public/plugins/grafana-test-datasource/img/ds.svg",
+						Small: "public/plugins/grafana-test-datasource/img/ds.svg",
+						Large: "public/plugins/grafana-test-datasource/img/ds.svg",
 					},
 					Updated:     "2023-08-03",
 					Screenshots: []plugins.Screenshots{},
@@ -528,10 +542,9 @@ func TestLoader_Load_ExternalRegistration(t *testing.T) {
 					GrafanaVersion: "*",
 					Plugins:        []plugins.Dependency{},
 				},
-				ExternalServiceRegistration: &plugindef.ExternalServiceRegistration{
+				IAM: &plugindef.IAM{
 					Impersonation: &plugindef.Impersonation{
-						Enabled: boolPtr(true),
-						Groups:  boolPtr(true),
+						Groups: boolPtr(true),
 						Permissions: []plugindef.Permission{
 							{
 								Action: "read",
@@ -539,13 +552,10 @@ func TestLoader_Load_ExternalRegistration(t *testing.T) {
 							},
 						},
 					},
-					Self: &plugindef.Self{
-						Enabled: boolPtr(true),
-						Permissions: []plugindef.Permission{
-							{
-								Action: "read",
-								Scope:  stringPtr("datasource"),
-							},
+					Permissions: []plugindef.Permission{
+						{
+							Action: "read",
+							Scope:  stringPtr("datasource"),
 						},
 					},
 				},
@@ -553,8 +563,8 @@ func TestLoader_Load_ExternalRegistration(t *testing.T) {
 				FS:        mustNewStaticFSForTests(t, pluginPaths[0]),
 				Class:     plugins.ClassExternal,
 				Signature: plugins.SignatureStatusUnsigned,
-				Module:    "/public/plugins/grafana-test-datasource/module.js",
-				BaseURL:   "/public/plugins/grafana-test-datasource",
+				Module:    "public/plugins/grafana-test-datasource/module.js",
+				BaseURL:   "public/plugins/grafana-test-datasource",
 				ExternalService: &auth.ExternalService{
 					ClientID:     "client-id",
 					ClientSecret: "secretz",
@@ -567,10 +577,12 @@ func TestLoader_Load_ExternalRegistration(t *testing.T) {
 		backendFactoryProvider.BackendFactoryFunc = func(ctx context.Context, plugin *plugins.Plugin) backendplugin.PluginFactoryFunc {
 			return func(pluginID string, logger log.Logger, env func() []string) (backendplugin.Plugin, error) {
 				require.Equal(t, "grafana-test-datasource", pluginID)
-				require.Equal(t, []string{"GF_VERSION=", "GF_EDITION=", "GF_ENTERPRISE_LICENSE_PATH=",
+				require.Equal(t, []string{
+					"GF_VERSION=", "GF_EDITION=", "GF_ENTERPRISE_LICENSE_PATH=",
 					"GF_ENTERPRISE_APP_URL=", "GF_ENTERPRISE_LICENSE_TEXT=", "GF_APP_URL=",
 					"GF_PLUGIN_APP_CLIENT_ID=client-id", "GF_PLUGIN_APP_CLIENT_SECRET=secretz",
-					"GF_PLUGIN_APP_PRIVATE_KEY=priv@t3", "GF_INSTANCE_FEATURE_TOGGLES_ENABLE=externalServiceAuth"}, env())
+					"GF_PLUGIN_APP_PRIVATE_KEY=priv@t3", "GF_INSTANCE_FEATURE_TOGGLES_ENABLE=externalServiceAuth",
+				}, env())
 				return &fakes.FakeBackendPlugin{}, nil
 			}
 		}
@@ -602,6 +614,100 @@ func TestLoader_Load_ExternalRegistration(t *testing.T) {
 			t.Fatalf("Result mismatch (-want +got):\n%s", cmp.Diff(got, expected, compareOpts...))
 		}
 	})
+
+	t.Run("Load a plugin with service account registration", func(t *testing.T) {
+		cfg := &config.Cfg{
+			Features:             featuremgmt.WithFeatures(featuremgmt.FlagExternalServiceAuth),
+			PluginsAllowUnsigned: []string{"grafana-test-datasource"},
+			AWSAssumeRoleEnabled: true,
+		}
+		pluginPaths := []string{filepath.Join(testDataDir(t), "external-registration")}
+		expected := []*plugins.Plugin{
+			{
+				JSONData: plugins.JSONData{
+					ID:         "grafana-test-datasource",
+					Type:       plugins.TypeDataSource,
+					Name:       "Test",
+					Backend:    true,
+					Executable: "gpx_test_datasource",
+					Info: plugins.Info{
+						Author: plugins.InfoLink{
+							Name: "Grafana Labs",
+							URL:  "https://grafana.com",
+						},
+						Version: "1.0.0",
+						Logos: plugins.Logos{
+							Small: "public/plugins/grafana-test-datasource/img/ds.svg",
+							Large: "public/plugins/grafana-test-datasource/img/ds.svg",
+						},
+						Updated:     "2023-08-03",
+						Screenshots: []plugins.Screenshots{},
+					},
+					Dependencies: plugins.Dependencies{
+						GrafanaVersion: "*",
+						Plugins:        []plugins.Dependency{},
+					},
+					IAM: &plugindef.IAM{
+						Permissions: []plugindef.Permission{
+							{
+								Action: "read",
+								Scope:  stringPtr("datasource"),
+							},
+						},
+					},
+				},
+				FS:        mustNewStaticFSForTests(t, pluginPaths[0]),
+				Class:     plugins.ClassExternal,
+				Signature: plugins.SignatureStatusUnsigned,
+				Module:    "public/plugins/grafana-test-datasource/module.js",
+				BaseURL:   "public/plugins/grafana-test-datasource",
+				ExternalService: &auth.ExternalService{
+					ClientID:     "client-id",
+					ClientSecret: "secretz",
+				},
+			},
+		}
+
+		backendFactoryProvider := fakes.NewFakeBackendProcessProvider()
+		backendFactoryProvider.BackendFactoryFunc = func(ctx context.Context, plugin *plugins.Plugin) backendplugin.PluginFactoryFunc {
+			return func(pluginID string, logger log.Logger, env func() []string) (backendplugin.Plugin, error) {
+				require.Equal(t, "grafana-test-datasource", pluginID)
+				require.Equal(t, []string{
+					"GF_VERSION=", "GF_EDITION=", "GF_ENTERPRISE_LICENSE_PATH=",
+					"GF_ENTERPRISE_APP_URL=", "GF_ENTERPRISE_LICENSE_TEXT=", "GF_APP_URL=",
+					"GF_PLUGIN_APP_CLIENT_ID=client-id", "GF_PLUGIN_APP_CLIENT_SECRET=secretz",
+					"GF_INSTANCE_FEATURE_TOGGLES_ENABLE=externalServiceAuth",
+				}, env())
+				return &fakes.FakeBackendPlugin{}, nil
+			}
+		}
+
+		l := newLoaderWithOpts(t, cfg, loaderDepOpts{
+			authServiceRegistry: &fakes.FakeAuthService{
+				Result: &auth.ExternalService{
+					ClientID:     "client-id",
+					ClientSecret: "secretz",
+				},
+			},
+			backendFactoryProvider: backendFactoryProvider,
+		})
+		got, err := l.Load(context.Background(), &fakes.FakePluginSource{
+			PluginClassFunc: func(ctx context.Context) plugins.Class {
+				return plugins.ClassExternal
+			},
+			PluginURIsFunc: func(ctx context.Context) []string {
+				return pluginPaths
+			},
+			DefaultSignatureFunc: func(ctx context.Context) (plugins.Signature, bool) {
+				return plugins.Signature{}, false
+			},
+		})
+
+		require.NoError(t, err)
+		if !cmp.Equal(got, expected, compareOpts...) {
+			t.Fatalf("Result mismatch (-want +got):\n%s", cmp.Diff(got, expected, compareOpts...))
+		}
+	})
 }
 
 func TestLoader_Load_CustomSource(t *testing.T) {
@@ -611,6 +717,7 @@ func TestLoader_Load_CustomSource(t *testing.T) {
 			PluginSettings: setting.PluginSettings{
 				"grafana-worldmap-panel": {"cdn": "true"},
 			},
+			Features: featuremgmt.WithFeatures(),
 		}
 
 		pluginPaths := []string{filepath.Join(testDataDir(t), "cdn")}
@@ -693,6 +800,7 @@ func TestLoader_Load_MultiplePlugins(t *testing.T) {
 				name: "Load multiple plugins (broken, valid, unsigned)",
 				cfg: &config.Cfg{
 					GrafanaAppURL: "http://localhost:3000",
+					Features:      featuremgmt.WithFeatures(),
 				},
 				pluginPaths: []string{
 					filepath.Join(testDataDir(t), "invalid-plugin-json"),    // test-app
@@ -711,8 +819,8 @@ func TestLoader_Load_MultiplePlugins(t *testing.T) {
 									URL:  "https://willbrowne.com",
 								},
 								Logos: plugins.Logos{
-									Small: "/public/img/icn-datasource.svg",
-									Large: "/public/img/icn-datasource.svg",
+									Small: "public/img/icn-datasource.svg",
+									Large: "public/img/icn-datasource.svg",
 								},
 								Description: "Test",
 								Version:     "1.0.0",
@@ -726,8 +834,8 @@ func TestLoader_Load_MultiplePlugins(t *testing.T) {
 							State:      plugins.ReleaseStateAlpha,
 						},
 						Class:         plugins.ClassExternal,
-						Module:        "/public/plugins/test-datasource/module.js",
-						BaseURL:       "/public/plugins/test-datasource",
+						Module:        "public/plugins/test-datasource/module.js",
+						BaseURL:       "public/plugins/test-datasource",
 						FS:            mustNewStaticFSForTests(t, filepath.Join(testDataDir(t), "valid-v2-pvt-signature/plugin")),
 						Signature:     "valid",
 						SignatureType: plugins.SignatureTypePrivate,
@@ -789,6 +897,7 @@ func TestLoader_Load_RBACReady(t *testing.T) {
 			name: "Load plugin defining one RBAC role",
 			cfg: &config.Cfg{
 				GrafanaAppURL: "http://localhost:3000",
+				Features:      featuremgmt.WithFeatures(),
 			},
 			pluginPaths: []string{filepath.Join(testDataDir(t), "test-app-with-roles")},
 			want: []*plugins.Plugin{
@@ -806,10 +915,11 @@ func TestLoader_Load_RBACReady(t *testing.T) {
 							Version:     "1.0.0",
 							Links:       []plugins.InfoLink{},
 							Logos: plugins.Logos{
-								Small: "/public/img/icn-app.svg",
-								Large: "/public/img/icn-app.svg",
+								Small: "public/img/icn-app.svg",
+								Large: "public/img/icn-app.svg",
 							},
-							Updated: "2015-02-10",
+							Updated:  "2015-02-10",
+							Keywords: []string{"test"},
 						},
 						Dependencies: plugins.Dependencies{
 							GrafanaVersion:    "*",
@@ -838,8 +948,8 @@ func TestLoader_Load_RBACReady(t *testing.T) {
 					Signature:     plugins.SignatureStatusValid,
 					SignatureType: plugins.SignatureTypePrivate,
 					SignatureOrg:  "gabrielmabille",
-					Module:        "/public/plugins/test-app/module.js",
-					BaseURL:       "/public/plugins/test-app",
+					Module:        "public/plugins/test-app/module.js",
+					BaseURL:       "public/plugins/test-app",
 				},
 			},
 		},
@@ -883,8 +993,8 @@ func TestLoader_Load_Signature_RootURL(t *testing.T) {
 						Author:      plugins.InfoLink{Name: "Will Browne", URL: "https://willbrowne.com"},
 						Description: "Test",
 						Logos: plugins.Logos{
-							Small: "/public/img/icn-datasource.svg",
-							Large: "/public/img/icn-datasource.svg",
+							Small: "public/img/icn-datasource.svg",
+							Large: "public/img/icn-datasource.svg",
 						},
 						Version: "1.0.0",
 					},
@@ -898,15 +1008,15 @@ func TestLoader_Load_Signature_RootURL(t *testing.T) {
 				Signature:     plugins.SignatureStatusValid,
 				SignatureType: plugins.SignatureTypePrivate,
 				SignatureOrg:  "Will Browne",
-				Module:        "/public/plugins/test-datasource/module.js",
-				BaseURL:       "/public/plugins/test-datasource",
+				Module:        "public/plugins/test-datasource/module.js",
+				BaseURL:       "public/plugins/test-datasource",
 			},
 		}
 
 		reg := fakes.NewFakePluginRegistry()
 		procPrvdr := fakes.NewFakeBackendProcessProvider()
 		procMgr := fakes.NewFakeProcessManager()
-		cfg := &config.Cfg{GrafanaAppURL: defaultAppURL}
+		cfg := &config.Cfg{GrafanaAppURL: defaultAppURL, Features: featuremgmt.WithFeatures()}
 		l := newLoader(t, cfg, reg, procMgr, procPrvdr, newFakeSignatureErrorTracker())
 		got, err := l.Load(context.Background(), &fakes.FakePluginSource{
 			PluginClassFunc: func(ctx context.Context) plugins.Class {
@@ -945,14 +1055,15 @@ func TestLoader_Load_DuplicatePlugins(t *testing.T) {
 							{Name: "License & Terms", URL: "http://license.com"},
 						},
 						Logos: plugins.Logos{
-							Small: "/public/plugins/test-app/img/logo_small.png",
-							Large: "/public/plugins/test-app/img/logo_large.png",
+							Small: "public/plugins/test-app/img/logo_small.png",
+							Large: "public/plugins/test-app/img/logo_large.png",
 						},
 						Screenshots: []plugins.Screenshots{
-							{Path: "/public/plugins/test-app/img/screenshot1.png", Name: "img1"},
-							{Path: "/public/plugins/test-app/img/screenshot2.png", Name: "img2"},
+							{Path: "public/plugins/test-app/img/screenshot1.png", Name: "img1"},
+							{Path: "public/plugins/test-app/img/screenshot2.png", Name: "img2"},
 						},
-						Updated: "2015-02-10",
+						Updated:  "2015-02-10",
+						Keywords: []string{"test"},
 					},
 					Dependencies: plugins.Dependencies{
 						GrafanaVersion: "3.x.x",
@@ -974,15 +1085,15 @@ func TestLoader_Load_DuplicatePlugins(t *testing.T) {
 				Signature:     plugins.SignatureStatusValid,
 				SignatureType: plugins.SignatureTypeGrafana,
 				SignatureOrg:  "Grafana Labs",
-				Module:        "/public/plugins/test-app/module.js",
-				BaseURL:       "/public/plugins/test-app",
+				Module:        "public/plugins/test-app/module.js",
+				BaseURL:       "public/plugins/test-app",
 			},
 		}
 
 		reg := fakes.NewFakePluginRegistry()
 		procPrvdr := fakes.NewFakeBackendProcessProvider()
 		procMgr := fakes.NewFakeProcessManager()
-		cfg := &config.Cfg{}
+		cfg := &config.Cfg{Features: featuremgmt.WithFeatures()}
 		l := newLoader(t, cfg, reg, procMgr, procPrvdr, newFakeSignatureErrorTracker())
 		got, err := l.Load(context.Background(), &fakes.FakePluginSource{
 			PluginClassFunc: func(ctx context.Context) plugins.Class {
@@ -1025,14 +1136,15 @@ func TestLoader_Load_SkipUninitializedPlugins(t *testing.T) {
 							{Name: "License & Terms", URL: "http://license.com"},
 						},
 						Logos: plugins.Logos{
-							Small: "/public/plugins/test-app/img/logo_small.png",
-							Large: "/public/plugins/test-app/img/logo_large.png",
+							Small: "public/plugins/test-app/img/logo_small.png",
+							Large: "public/plugins/test-app/img/logo_large.png",
 						},
 						Screenshots: []plugins.Screenshots{
-							{Path: "/public/plugins/test-app/img/screenshot1.png", Name: "img1"},
-							{Path: "/public/plugins/test-app/img/screenshot2.png", Name: "img2"},
+							{Path: "public/plugins/test-app/img/screenshot1.png", Name: "img1"},
+							{Path: "public/plugins/test-app/img/screenshot2.png", Name: "img2"},
 						},
-						Updated: "2015-02-10",
+						Updated:  "2015-02-10",
+						Keywords: []string{"test"},
 					},
 					Dependencies: plugins.Dependencies{
 						GrafanaVersion: "3.x.x",
@@ -1054,8 +1166,8 @@ func TestLoader_Load_SkipUninitializedPlugins(t *testing.T) {
 				Signature:     plugins.SignatureStatusValid,
 				SignatureType: plugins.SignatureTypeGrafana,
 				SignatureOrg:  "Grafana Labs",
-				Module:        "/public/plugins/test-app/module.js",
-				BaseURL:       "/public/plugins/test-app",
+				Module:        "public/plugins/test-app/module.js",
+				BaseURL:       "public/plugins/test-app",
 			},
 		}
 
@@ -1071,7 +1183,7 @@ func TestLoader_Load_SkipUninitializedPlugins(t *testing.T) {
 			}
 		}
 		procMgr := fakes.NewFakeProcessManager()
-		cfg := &config.Cfg{}
+		cfg := &config.Cfg{Features: featuremgmt.WithFeatures()}
 		l := newLoader(t, cfg, reg, procMgr, procPrvdr, newFakeSignatureErrorTracker())
 		got, err := l.Load(context.Background(), &fakes.FakePluginSource{
 			PluginClassFunc: func(ctx context.Context) plugins.Class {
@@ -1128,16 +1240,16 @@ func TestLoader_AngularClass(t *testing.T) {
 				},
 			}
 			// if angularDetected = true, it means that the detection has run
-			l := newLoaderWithOpts(t, &config.Cfg{AngularSupportEnabled: true}, loaderDepOpts{
+			l := newLoaderWithOpts(t, &config.Cfg{AngularSupportEnabled: true, Features: featuremgmt.WithFeatures()}, loaderDepOpts{
 				angularInspector: angularinspector.AlwaysAngularFakeInspector,
 			})
 			p, err := l.Load(context.Background(), fakePluginSource)
 			require.NoError(t, err)
 			require.Len(t, p, 1, "should load 1 plugin")
 			if tc.expAngularDetectionRun {
-				require.True(t, p[0].AngularDetected, "angular detection should run")
+				require.True(t, p[0].Angular.Detected, "angular detection should run")
 			} else {
-				require.False(t, p[0].AngularDetected, "angular detection should not run")
+				require.False(t, p[0].Angular.Detected, "angular detection should not run")
 			}
 		})
 	}
@@ -1156,8 +1268,8 @@ func TestLoader_Load_Angular(t *testing.T) {
 		name string
 		cfg  *config.Cfg
 	}{
-		{name: "angular support enabled", cfg: &config.Cfg{AngularSupportEnabled: true}},
-		{name: "angular support disabled", cfg: &config.Cfg{AngularSupportEnabled: false}},
+		{name: "angular support enabled", cfg: &config.Cfg{AngularSupportEnabled: true, Features: featuremgmt.WithFeatures()}},
+		{name: "angular support disabled", cfg: &config.Cfg{AngularSupportEnabled: false, Features: featuremgmt.WithFeatures()}},
 	} {
 		t.Run(cfgTc.name, func(t *testing.T) {
 			for _, tc := range []struct {
@@ -1193,6 +1305,48 @@ func TestLoader_Load_Angular(t *testing.T) {
 	}
 }
 
+func TestLoader_HideAngularDeprecation(t *testing.T) {
+	fakePluginSource := &fakes.FakePluginSource{
+		PluginClassFunc: func(ctx context.Context) plugins.Class {
+			return plugins.ClassExternal
+		},
+		PluginURIsFunc: func(ctx context.Context) []string {
+			return []string{filepath.Join(testDataDir(t), "valid-v2-signature")}
+		},
+	}
+	for _, tc := range []struct {
+		name                      string
+		cfg                       *config.Cfg
+		expHideAngularDeprecation bool
+	}{
+		{name: "with plugin id in HideAngularDeprecation list", cfg: &config.Cfg{
+			AngularSupportEnabled:  true,
+			HideAngularDeprecation: []string{"one-app", "two-panel", "test-datasource", "three-datasource"},
+			Features:               featuremgmt.WithFeatures(),
+		}, expHideAngularDeprecation: true},
+		{name: "without plugin id in HideAngularDeprecation list", cfg: &config.Cfg{
+			AngularSupportEnabled:  true,
+			HideAngularDeprecation: []string{"one-app", "two-panel", "three-datasource"},
+			Features:               featuremgmt.WithFeatures(),
+		}, expHideAngularDeprecation: false},
+		{name: "with empty HideAngularDeprecation", cfg: &config.Cfg{
+			AngularSupportEnabled:  true,
+			HideAngularDeprecation: nil,
+			Features:               featuremgmt.WithFeatures(),
+		}, expHideAngularDeprecation: false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			l := newLoaderWithOpts(t, tc.cfg, loaderDepOpts{
+				angularInspector: angularinspector.AlwaysAngularFakeInspector,
+			})
+			p, err := l.Load(context.Background(), fakePluginSource)
+			require.NoError(t, err)
+			require.Len(t, p, 1, "should load 1 plugin")
+			require.Equal(t, tc.expHideAngularDeprecation, p[0].Angular.HideDeprecation)
+		})
+	}
+}
+
 func TestLoader_Load_NestedPlugins(t *testing.T) {
 	parent := &plugins.Plugin{
 		JSONData: plugins.JSONData{
@@ -1205,8 +1359,8 @@ func TestLoader_Load_NestedPlugins(t *testing.T) {
 					URL:  "http://grafana.com",
 				},
 				Logos: plugins.Logos{
-					Small: "/public/img/icn-datasource.svg",
-					Large: "/public/img/icn-datasource.svg",
+					Small: "public/img/icn-datasource.svg",
+					Large: "public/img/icn-datasource.svg",
 				},
 				Description: "Parent plugin",
 				Version:     "1.0.0",
@@ -1218,8 +1372,8 @@ func TestLoader_Load_NestedPlugins(t *testing.T) {
 			},
 			Backend: true,
 		},
-		Module:        "/public/plugins/test-datasource/module.js",
-		BaseURL:       "/public/plugins/test-datasource",
+		Module:        "public/plugins/test-datasource/module.js",
+		BaseURL:       "public/plugins/test-datasource",
 		FS:            mustNewStaticFSForTests(t, filepath.Join(testDataDir(t), "nested-plugins/parent")),
 		Signature:     plugins.SignatureStatusValid,
 		SignatureType: plugins.SignatureTypeGrafana,
@@ -1238,8 +1392,8 @@ func TestLoader_Load_NestedPlugins(t *testing.T) {
 					URL:  "http://grafana.com",
 				},
 				Logos: plugins.Logos{
-					Small: "/public/img/icn-panel.svg",
-					Large: "/public/img/icn-panel.svg",
+					Small: "public/img/icn-panel.svg",
+					Large: "public/img/icn-panel.svg",
 				},
 				Description: "Child plugin",
 				Version:     "1.0.1",
@@ -1250,8 +1404,8 @@ func TestLoader_Load_NestedPlugins(t *testing.T) {
 				Plugins:        []plugins.Dependency{},
 			},
 		},
-		Module:        "/public/plugins/test-panel/module.js",
-		BaseURL:       "/public/plugins/test-panel",
+		Module:        "public/plugins/test-panel/module.js",
+		BaseURL:       "public/plugins/test-panel",
 		FS:            mustNewStaticFSForTests(t, filepath.Join(testDataDir(t), "nested-plugins/parent/nested")),
 		Signature:     plugins.SignatureStatusValid,
 		SignatureType: plugins.SignatureTypeGrafana,
@@ -1266,7 +1420,7 @@ func TestLoader_Load_NestedPlugins(t *testing.T) {
 		procPrvdr := fakes.NewFakeBackendProcessProvider()
 		procMgr := fakes.NewFakeProcessManager()
 		reg := fakes.NewFakePluginRegistry()
-		cfg := &config.Cfg{}
+		cfg := &config.Cfg{Features: featuremgmt.WithFeatures()}
 		l := newLoader(t, cfg, reg, procMgr, procPrvdr, newFakeSignatureErrorTracker())
 
 		got, err := l.Load(context.Background(), &fakes.FakePluginSource{
@@ -1330,13 +1484,14 @@ func TestLoader_Load_NestedPlugins(t *testing.T) {
 						{Name: "License", URL: "https://github.com/grafana/grafana-starter-app/blob/master/LICENSE"},
 					},
 					Logos: plugins.Logos{
-						Small: "/public/plugins/myorgid-simple-app/img/logo.svg",
-						Large: "/public/plugins/myorgid-simple-app/img/logo.svg",
+						Small: "public/plugins/myorgid-simple-app/img/logo.svg",
+						Large: "public/plugins/myorgid-simple-app/img/logo.svg",
 					},
 					Screenshots: []plugins.Screenshots{},
 					Description: "Grafana App Plugin Template",
 					Version:     "",
 					Updated:     "",
+					Keywords:    []string{"panel", "template"},
 				},
 				Dependencies: plugins.Dependencies{
 					GrafanaVersion:    "7.0.0",
@@ -1386,8 +1541,8 @@ func TestLoader_Load_NestedPlugins(t *testing.T) {
 				},
 				Backend: false,
 			},
-			Module:        "/public/plugins/myorgid-simple-app/module.js",
-			BaseURL:       "/public/plugins/myorgid-simple-app",
+			Module:        "public/plugins/myorgid-simple-app/module.js",
+			BaseURL:       "public/plugins/myorgid-simple-app",
 			FS:            mustNewStaticFSForTests(t, filepath.Join(testDataDir(t), "app-with-child/dist")),
 			DefaultNavURL: "/plugins/myorgid-simple-app/page/root-page-react",
 			Signature:     plugins.SignatureStatusValid,
@@ -1410,13 +1565,14 @@ func TestLoader_Load_NestedPlugins(t *testing.T) {
 						{Name: "License", URL: "https://github.com/grafana/grafana-starter-panel/blob/master/LICENSE"},
 					},
 					Logos: plugins.Logos{
-						Small: "/public/plugins/myorgid-simple-panel/img/logo.svg",
-						Large: "/public/plugins/myorgid-simple-panel/img/logo.svg",
+						Small: "public/plugins/myorgid-simple-panel/img/logo.svg",
+						Large: "public/plugins/myorgid-simple-panel/img/logo.svg",
 					},
 					Screenshots: []plugins.Screenshots{},
 					Description: "Grafana Panel Plugin Template",
 					Version:     "",
 					Updated:     "",
+					Keywords:    []string{"panel", "template"},
 				},
 				Dependencies: plugins.Dependencies{
 					GrafanaDependency: ">=7.0.0",
@@ -1424,8 +1580,8 @@ func TestLoader_Load_NestedPlugins(t *testing.T) {
 					Plugins:           []plugins.Dependency{},
 				},
 			},
-			Module:          "/public/plugins/myorgid-simple-app/child/module.js",
-			BaseURL:         "/public/plugins/myorgid-simple-app",
+			Module:          "public/plugins/myorgid-simple-app/child/module.js",
+			BaseURL:         "public/plugins/myorgid-simple-app",
 			FS:              mustNewStaticFSForTests(t, filepath.Join(testDataDir(t), "app-with-child/dist/child")),
 			IncludedInAppID: parent.ID,
 			Signature:       plugins.SignatureStatusValid,
@@ -1441,7 +1597,7 @@ func TestLoader_Load_NestedPlugins(t *testing.T) {
 		reg := fakes.NewFakePluginRegistry()
 		procPrvdr := fakes.NewFakeBackendProcessProvider()
 		procMgr := fakes.NewFakeProcessManager()
-		cfg := &config.Cfg{}
+		cfg := &config.Cfg{Features: featuremgmt.WithFeatures()}
 		l := newLoader(t, cfg, reg, procMgr, procPrvdr, newFakeSignatureErrorTracker())
 		got, err := l.Load(context.Background(), &fakes.FakePluginSource{
 			PluginClassFunc: func(ctx context.Context) plugins.Class {
@@ -1473,7 +1629,8 @@ type loaderDepOpts struct {
 }
 
 func newLoader(t *testing.T, cfg *config.Cfg, reg registry.Service, proc process.Manager,
-	backendFactory plugins.BackendFactoryProvider, sigErrTracker pluginerrs.SignatureErrorTracker) *Loader {
+	backendFactory plugins.BackendFactoryProvider, sigErrTracker pluginerrs.SignatureErrorTracker,
+) *Loader {
 	assets := assetpath.ProvideService(cfg, pluginscdn.ProvideService(cfg))
 	lic := fakes.NewFakeLicensingService()
 	angularInspector := angularinspector.NewStaticInspector()
@@ -1481,7 +1638,8 @@ func newLoader(t *testing.T, cfg *config.Cfg, reg registry.Service, proc process
 	terminate, err := pipeline.ProvideTerminationStage(cfg, reg, proc)
 	require.NoError(t, err)
 
-	return ProvideService(pipeline.ProvideDiscoveryStage(cfg, finder.NewLocalFinder(false), reg),
+	return ProvideService(pipeline.ProvideDiscoveryStage(cfg,
+		finder.NewLocalFinder(false, featuremgmt.WithFeatures()), reg),
 		pipeline.ProvideBootstrapStage(cfg, signature.DefaultCalculator(cfg), assets),
 		pipeline.ProvideValidationStage(cfg, signature.NewValidator(signature.NewUnsignedAuthorizer(cfg)), angularInspector, sigErrTracker),
 		pipeline.ProvideInitializationStage(cfg, reg, lic, backendFactory, proc, &fakes.FakeAuthService{}, fakes.NewFakeRoleRegistry()),
@@ -1513,7 +1671,8 @@ func newLoaderWithOpts(t *testing.T, cfg *config.Cfg, opts loaderDepOpts) *Loade
 		backendFactoryProvider = fakes.NewFakeBackendProcessProvider()
 	}
 
-	return ProvideService(pipeline.ProvideDiscoveryStage(cfg, finder.NewLocalFinder(false), reg),
+	return ProvideService(pipeline.ProvideDiscoveryStage(cfg,
+		finder.NewLocalFinder(false, featuremgmt.WithFeatures()), reg),
 		pipeline.ProvideBootstrapStage(cfg, signature.DefaultCalculator(cfg), assets),
 		pipeline.ProvideValidationStage(cfg, signature.NewValidator(signature.NewUnsignedAuthorizer(cfg)), angularInspector, sigErrTracker),
 		pipeline.ProvideInitializationStage(cfg, reg, lic, backendFactoryProvider, proc, authServiceRegistry, fakes.NewFakeRoleRegistry()),
@@ -1521,11 +1680,12 @@ func newLoaderWithOpts(t *testing.T, cfg *config.Cfg, opts loaderDepOpts) *Loade
 }
 
 func verifyState(t *testing.T, ps []*plugins.Plugin, reg registry.Service,
-	procPrvdr *fakes.FakeBackendProcessProvider, procMngr *fakes.FakeProcessManager) {
+	procPrvdr *fakes.FakeBackendProcessProvider, procMngr *fakes.FakeProcessManager,
+) {
 	t.Helper()
 
 	for _, p := range ps {
-		regP, exists := reg.Plugin(context.Background(), p.ID)
+		regP, exists := reg.Plugin(context.Background(), p.ID, p.Info.Version)
 		require.True(t, exists)
 		if !cmp.Equal(p, regP, compareOpts...) {
 			t.Fatalf("Result mismatch (-want +got):\n%s", cmp.Diff(p, regP, compareOpts...))

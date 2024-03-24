@@ -7,6 +7,7 @@ import { Monaco } from '@grafana/ui';
 
 import { loadScriptIntoSandbox } from './code_loader';
 import { forbiddenElements } from './constants';
+import { recursivePatchObjectAsLiveTarget } from './document_sandbox';
 import { SandboxEnvironment } from './types';
 import { logWarning, unboxRegexesFromMembraneProxy } from './utils';
 
@@ -85,6 +86,7 @@ export function getGeneralSandboxDistortionMap() {
     distortDocument(generalDistortionMap);
     distortMonacoEditor(generalDistortionMap);
     distortPostMessage(generalDistortionMap);
+    distortLodash(generalDistortionMap);
   }
   return generalDistortionMap;
 }
@@ -526,26 +528,32 @@ async function distortPostMessage(distortions: DistortionMap) {
  * or because the libraries we want to patch are lazy-loaded and we don't have access to their definitions.
  * We put here only distortions that can't be static because they are dynamicly loaded
  */
-export function distortLiveApis(originalValue: ProxyTarget): ProxyTarget | undefined {
+export function distortLiveApis(_originalValue: ProxyTarget): ProxyTarget | undefined {
   distortMonacoEditor(generalDistortionMap);
+  return;
+}
 
-  // This distorts the `history.replace` function in react-router-dom.
-  // constructed for each browser history and is only accessible within the react context.
-  // Note that this distortion does not affect `String.prototype.replace` calls.
-  // because they don't go through distortions
-  if (
-    originalValue instanceof Function &&
-    originalValue.name === 'replace' &&
-    originalValue.prototype.constructor.length === 2
-  ) {
-    return function replace(this: unknown, ...args: unknown[]) {
-      // validate history.replace signature further
-      if (args && args[0] && typeof args[0] === 'string' && args[1] && !(args[1] instanceof Function)) {
-        const newArgs = cloneDeep(args);
-        return Reflect.apply(originalValue, this, newArgs);
-      }
-      return Reflect.apply(originalValue, this, args);
+export function distortLodash(distortions: DistortionMap) {
+  /**
+   * This is a distortion for lodash clone Deep function
+   * because lodash deep clones execute in the blue realm
+   * it returns objects that plugins can't modify because they are not
+   * lived tracked.
+   *
+   * We need to patch it so that plugins can modify the cloned object
+   * in places such as query editors.
+   *
+   */
+  function cloneDeepDistortion(originalValue: unknown) {
+    // here to please typescript, this if is never true
+    if (!isFunction(originalValue)) {
+      return originalValue;
+    }
+    return function (this: unknown, ...args: unknown[]) {
+      const cloned = originalValue.apply(this, args);
+      recursivePatchObjectAsLiveTarget(cloned);
+      return cloned;
     };
   }
-  return;
+  distortions.set(cloneDeep, cloneDeepDistortion);
 }

@@ -1,11 +1,13 @@
 package migrations
 
 import (
+	dashboardFolderMigrations "github.com/grafana/grafana/pkg/services/dashboards/database/migrations"
 	"github.com/grafana/grafana/pkg/services/featuremgmt"
 	"github.com/grafana/grafana/pkg/services/sqlstore/migrations/accesscontrol"
 	"github.com/grafana/grafana/pkg/services/sqlstore/migrations/anonservice"
 	"github.com/grafana/grafana/pkg/services/sqlstore/migrations/oauthserver"
 	"github.com/grafana/grafana/pkg/services/sqlstore/migrations/signingkeys"
+	"github.com/grafana/grafana/pkg/services/sqlstore/migrations/ssosettings"
 	"github.com/grafana/grafana/pkg/services/sqlstore/migrations/ualert"
 	. "github.com/grafana/grafana/pkg/services/sqlstore/migrator"
 )
@@ -19,13 +21,14 @@ import (
 //    specifically added
 
 type OSSMigrations struct {
+	features featuremgmt.FeatureToggles
 }
 
-func ProvideOSSMigrations() *OSSMigrations {
-	return &OSSMigrations{}
+func ProvideOSSMigrations(features featuremgmt.FeatureToggles) *OSSMigrations {
+	return &OSSMigrations{features}
 }
 
-func (*OSSMigrations) AddMigration(mg *Migrator) {
+func (oss *OSSMigrations) AddMigration(mg *Migrator) {
 	mg.AddCreateMigration()
 	addUserMigrations(mg)
 	addTempUserMigrations(mg)
@@ -93,10 +96,8 @@ func (*OSSMigrations) AddMigration(mg *Migrator) {
 
 	addFolderMigrations(mg)
 	addJoinRequesterMigrations(mg)
-	if mg.Cfg != nil && mg.Cfg.IsFeatureToggleEnabled != nil {
-		if mg.Cfg.IsFeatureToggleEnabled(featuremgmt.FlagExternalServiceAuth) {
-			oauthserver.AddMigration(mg)
-		}
+	if oss.features != nil && oss.features.IsEnabledGlobally(featuremgmt.FlagExternalServiceAuth) {
+		oauthserver.AddMigration(mg)
 	}
 
 	anonservice.AddMigration(mg)
@@ -104,6 +105,23 @@ func (*OSSMigrations) AddMigration(mg *Migrator) {
 
 	ualert.MigrationServiceMigration(mg)
 	ualert.CreatedFoldersMigration(mg)
+
+	dashboardFolderMigrations.AddDashboardFolderMigrations(mg)
+
+	ssosettings.AddMigration(mg)
+
+	ualert.CreateOrgMigratedKVStoreEntries(mg)
+
+	// https://github.com/grafana/identity-access-team/issues/546: tracks removal of the feature toggle from the annotation permission migration
+	if oss.features != nil && oss.features.IsEnabledGlobally(featuremgmt.FlagAnnotationPermissionUpdate) {
+		accesscontrol.AddManagedDashboardAnnotationActionsMigration(mg)
+	}
+
+	addKVStoreMySQLValueTypeLongTextMigration(mg)
+
+	ualert.AddRuleNotificationSettingsColumns(mg)
+
+	accesscontrol.AddAlertingScopeRemovalMigration(mg)
 }
 
 func addStarMigrations(mg *Migrator) {

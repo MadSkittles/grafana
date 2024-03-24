@@ -4,56 +4,53 @@ import React, { useState, useEffect, useMemo } from 'react';
 import useAsync from 'react-use/lib/useAsync';
 
 import { SelectableValue } from '@grafana/data';
-import { AccessoryButton } from '@grafana/experimental';
 import { FetchError, getTemplateSrv, isFetchError } from '@grafana/runtime';
 import { Select, HorizontalGroup, useStyles2 } from '@grafana/ui';
 
-import { createErrorNotification } from '../../../../core/copy/appNotification';
-import { notifyApp } from '../../../../core/reducers/appNotification';
-import { dispatch } from '../../../../store/store';
+import { notifyApp } from '../_importedDependencies/actions/appNotification';
+import { createErrorNotification } from '../_importedDependencies/core/appNotification';
+import { dispatch } from '../_importedDependencies/store';
 import { TraceqlFilter, TraceqlSearchScope } from '../dataquery.gen';
 import { TempoDatasource } from '../datasource';
-import TempoLanguageProvider from '../language_provider';
-import { operators as allOperators, stringOperators, numberOperators } from '../traceql/traceql';
+import { operators as allOperators, stringOperators, numberOperators, keywordOperators } from '../traceql/traceql';
 
 import { filterScopedTag, operatorSelectableValue } from './utils';
 
 const getStyles = () => ({
-  dropdown: css`
-    box-shadow: none;
-  `,
+  dropdown: css({
+    boxShadow: 'none',
+  }),
 });
 
 interface Props {
   filter: TraceqlFilter;
   datasource: TempoDatasource;
   updateFilter: (f: TraceqlFilter) => void;
-  deleteFilter?: (f: TraceqlFilter) => void;
   setError: (error: FetchError) => void;
   isTagsLoading?: boolean;
   tags: string[];
   hideScope?: boolean;
   hideTag?: boolean;
   hideValue?: boolean;
-  allowDelete?: boolean;
   query: string;
+  isMulti?: boolean;
+  allowCustomValue?: boolean;
 }
 const SearchField = ({
   filter,
   datasource,
   updateFilter,
-  deleteFilter,
   isTagsLoading,
   tags,
   setError,
   hideScope,
   hideTag,
   hideValue,
-  allowDelete,
   query,
+  isMulti = true,
+  allowCustomValue = true,
 }: Props) => {
   const styles = useStyles2(getStyles);
-  const languageProvider = useMemo(() => new TempoLanguageProvider(datasource), [datasource]);
   const scopedTag = useMemo(() => filterScopedTag(filter), [filter]);
   // We automatically change the operator to the regex op when users select 2 or more values
   // However, they expect this to be automatically rolled back to the previous operator once
@@ -63,7 +60,7 @@ const SearchField = ({
 
   const updateOptions = async () => {
     try {
-      return filter.tag ? await languageProvider.getOptionsV2(scopedTag, query) : [];
+      return filter.tag ? await datasource.languageProvider.getOptionsV2(scopedTag, query) : [];
     } catch (error) {
       // Display message if Tempo is connected but search 404's
       if (isFetchError(error) && error?.status === 404) {
@@ -77,7 +74,7 @@ const SearchField = ({
 
   const { loading: isLoadingValues, value: options } = useAsync(updateOptions, [
     scopedTag,
-    languageProvider,
+    datasource.languageProvider,
     setError,
     query,
   ]);
@@ -88,7 +85,12 @@ const SearchField = ({
   }
 
   useEffect(() => {
-    if (Array.isArray(filter.value) && filter.value.length > 1 && filter.operator !== '=~') {
+    if (
+      Array.isArray(filter.value) &&
+      filter.value.length > 1 &&
+      filter.operator !== '=~' &&
+      filter.operator !== '!~'
+    ) {
       setPrevOperator(filter.operator);
       updateFilter({ ...filter, operator: '=~' });
     }
@@ -110,6 +112,9 @@ const SearchField = ({
   const uniqueOptionType = options?.length === optionsOfFirstType?.length ? options?.[0]?.type : undefined;
   let operatorList = allOperators;
   switch (uniqueOptionType) {
+    case 'keyword':
+      operatorList = keywordOperators;
+      break;
     case 'string':
       operatorList = stringOperators;
       break;
@@ -158,7 +163,7 @@ const SearchField = ({
           )}
           value={filter.tag}
           onChange={(v) => {
-            updateFilter({ ...filter, tag: v?.value });
+            updateFilter({ ...filter, tag: v?.value, value: [] });
           }}
           placeholder="Select tag"
           isClearable
@@ -194,20 +199,11 @@ const SearchField = ({
             }
           }}
           placeholder="Select value"
-          isClearable={false}
+          isClearable={true}
           aria-label={`select ${filter.id} value`}
-          allowCustomValue={true}
-          isMulti
+          allowCustomValue={allowCustomValue}
+          isMulti={isMulti}
           allowCreateWhileLoading
-        />
-      )}
-      {allowDelete && (
-        <AccessoryButton
-          variant={'secondary'}
-          icon={'times'}
-          onClick={() => deleteFilter?.(filter)}
-          tooltip={'Remove tag'}
-          aria-label={`remove tag with ID ${filter.id}`}
         />
       )}
     </HorizontalGroup>

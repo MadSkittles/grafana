@@ -2,7 +2,8 @@ import { createAction, createAsyncThunk, Update } from '@reduxjs/toolkit';
 import { from, forkJoin, timeout, lastValueFrom, catchError, of } from 'rxjs';
 
 import { PanelPlugin, PluginError } from '@grafana/data';
-import { getBackendSrv, isFetchError } from '@grafana/runtime';
+import { config, getBackendSrv, isFetchError } from '@grafana/runtime';
+import configCore from 'app/core/config';
 import { importPanelPlugin } from 'app/features/plugins/importPanelPlugin';
 import { StoreState, ThunkResult } from 'app/types';
 
@@ -14,10 +15,11 @@ import {
   getPluginDetails,
   installPlugin,
   uninstallPlugin,
+  getInstancePlugins,
 } from '../api';
 import { STATE_PREFIX } from '../constants';
 import { mapLocalToCatalog, mergeLocalsAndRemotes, updatePanels } from '../helpers';
-import { CatalogPlugin, RemotePlugin, LocalPlugin } from '../types';
+import { CatalogPlugin, RemotePlugin, LocalPlugin, InstancePlugin } from '../types';
 
 // Fetches
 export const fetchAll = createAsyncThunk(`${STATE_PREFIX}/fetchAll`, async (_, thunkApi) => {
@@ -25,6 +27,10 @@ export const fetchAll = createAsyncThunk(`${STATE_PREFIX}/fetchAll`, async (_, t
     thunkApi.dispatch({ type: `${STATE_PREFIX}/fetchLocal/pending` });
     thunkApi.dispatch({ type: `${STATE_PREFIX}/fetchRemote/pending` });
 
+    const instance$ =
+      config.pluginAdminExternalManageEnabled && configCore.featureToggles.managedPluginsInstall
+        ? from(getInstancePlugins())
+        : of(undefined);
     const TIMEOUT = 500;
     const pluginErrors$ = from(getPluginErrors());
     const local$ = from(getLocalPlugins());
@@ -41,6 +47,7 @@ export const fetchAll = createAsyncThunk(`${STATE_PREFIX}/fetchAll`, async (_, t
     forkJoin({
       local: local$,
       remote: remote$,
+      instance: instance$,
       pluginErrors: pluginErrors$,
     })
       .pipe(
@@ -58,13 +65,14 @@ export const fetchAll = createAsyncThunk(`${STATE_PREFIX}/fetchAll`, async (_, t
 
                 if (remote.length > 0) {
                   const local = await lastValueFrom(local$);
+                  const instance = await lastValueFrom(instance$);
                   const pluginErrors = await lastValueFrom(pluginErrors$);
 
-                  thunkApi.dispatch(addPlugins(mergeLocalsAndRemotes(local, remote, pluginErrors)));
+                  thunkApi.dispatch(addPlugins(mergeLocalsAndRemotes({ local, remote, instance, pluginErrors })));
                 }
               });
 
-            return forkJoin({ local: local$, pluginErrors: pluginErrors$ });
+            return forkJoin({ local: local$, instance: instance$, pluginErrors: pluginErrors$ });
           },
         })
       )
@@ -72,26 +80,28 @@ export const fetchAll = createAsyncThunk(`${STATE_PREFIX}/fetchAll`, async (_, t
         ({
           local,
           remote,
+          instance,
           pluginErrors,
         }: {
           local: LocalPlugin[];
           remote?: RemotePlugin[];
+          instance?: InstancePlugin[];
           pluginErrors: PluginError[];
         }) => {
           // Both local and remote plugins are loaded
           if (local && remote) {
             thunkApi.dispatch({ type: `${STATE_PREFIX}/fetchLocal/fulfilled` });
             thunkApi.dispatch({ type: `${STATE_PREFIX}/fetchRemote/fulfilled` });
-            thunkApi.dispatch(addPlugins(mergeLocalsAndRemotes(local, remote, pluginErrors)));
+            thunkApi.dispatch(addPlugins(mergeLocalsAndRemotes({ local, remote, instance, pluginErrors })));
 
             // Only remote plugins are loaded (remote timed out)
           } else if (local) {
             thunkApi.dispatch({ type: `${STATE_PREFIX}/fetchLocal/fulfilled` });
-            thunkApi.dispatch(addPlugins(mergeLocalsAndRemotes(local, [], pluginErrors)));
+            thunkApi.dispatch(addPlugins(mergeLocalsAndRemotes({ local, pluginErrors })));
           }
         },
         (error) => {
-          console.error(error);
+          console.log(error);
           thunkApi.dispatch({ type: `${STATE_PREFIX}/fetchLocal/rejected` });
           thunkApi.dispatch({ type: `${STATE_PREFIX}/fetchRemote/rejected` });
           return thunkApi.rejectWithValue('Unknown error.');

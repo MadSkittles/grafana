@@ -10,7 +10,7 @@ const addDataSource = () => {
       e2e.components.DataSource.Prometheus.configPage.exemplarsAddButton().click();
       e2e.components.DataSource.Prometheus.configPage.internalLinkSwitch().check({ force: true });
       e2e.components.DataSource.Prometheus.configPage.connectionSettings().type('http://prom-url:9090');
-      e2e.components.DataSourcePicker.inputV2().click({ force: true }).should('have.focus');
+      e2e.components.DataSourcePicker.inputV2().click().should('have.focus');
 
       cy.contains('gdev-tempo').scrollIntoView().should('be.visible').click();
     },
@@ -55,7 +55,7 @@ describe('Exemplars', () => {
     cy.contains(dataSourceName).scrollIntoView().should('be.visible').click();
 
     // Switch to code editor
-    cy.contains('label', 'Code').click();
+    e2e.components.RadioButton.container().filter(':contains("Code")').click();
 
     // we need to wait for the query-field being lazy-loaded, in two steps:
     // 1. first we wait for the text 'Loading...' to appear

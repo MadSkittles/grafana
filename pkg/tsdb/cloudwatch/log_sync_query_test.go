@@ -15,10 +15,8 @@ import (
 	"github.com/grafana/grafana-plugin-sdk-go/backend"
 	"github.com/grafana/grafana-plugin-sdk-go/backend/datasource"
 	"github.com/grafana/grafana-plugin-sdk-go/backend/instancemgmt"
+	"github.com/grafana/grafana-plugin-sdk-go/backend/log"
 	"github.com/grafana/grafana-plugin-sdk-go/data"
-	"github.com/grafana/grafana/pkg/services/featuremgmt"
-	ngalertmodels "github.com/grafana/grafana/pkg/services/ngalert/models"
-	"github.com/grafana/grafana/pkg/services/query"
 	"github.com/grafana/grafana/pkg/tsdb/cloudwatch/models"
 	"github.com/grafana/grafana/pkg/tsdb/cloudwatch/utils"
 	"github.com/stretchr/testify/assert"
@@ -43,10 +41,10 @@ func Test_executeSyncLogQuery(t *testing.T) {
 			return DataSource{Settings: models.CloudWatchSettings{}}, nil
 		})
 		sess := fakeSessionCache{}
-		executor := newExecutor(im, newTestConfig(), &sess, featuremgmt.WithFeatures())
+		executor := newExecutor(im, &sess, log.NewNullLogger())
 
 		_, err := executor.QueryData(context.Background(), &backend.QueryDataRequest{
-			Headers:       map[string]string{ngalertmodels.FromAlertHeaderName: "some value"},
+			Headers:       map[string]string{headerFromAlert: "some value"},
 			PluginContext: backend.PluginContext{DataSourceInstanceSettings: &backend.DataSourceInstanceSettings{}},
 			Queries: []backend.DataQuery{
 				{
@@ -70,9 +68,9 @@ func Test_executeSyncLogQuery(t *testing.T) {
 		})
 		sess := fakeSessionCache{}
 
-		executor := newExecutor(im, newTestConfig(), &sess, featuremgmt.WithFeatures())
+		executor := newExecutor(im, &sess, log.NewNullLogger())
 		_, err := executor.QueryData(context.Background(), &backend.QueryDataRequest{
-			Headers:       map[string]string{ngalertmodels.FromAlertHeaderName: "some value"},
+			Headers:       map[string]string{headerFromAlert: "some value"},
 			PluginContext: backend.PluginContext{DataSourceInstanceSettings: &backend.DataSourceInstanceSettings{}},
 			Queries: []backend.DataQuery{
 				{
@@ -97,12 +95,12 @@ func Test_executeSyncLogQuery(t *testing.T) {
 		}{
 			{
 				"alert header",
-				map[string]string{ngalertmodels.FromAlertHeaderName: "some value"},
+				map[string]string{headerFromAlert: "some value"},
 				true,
 			},
 			{
 				"expression header",
-				map[string]string{fmt.Sprintf("http_%s", query.HeaderFromExpression): "some value"},
+				map[string]string{fmt.Sprintf("http_%s", headerFromExpression): "some value"},
 				true,
 			},
 			{
@@ -127,7 +125,7 @@ func Test_executeSyncLogQuery(t *testing.T) {
 				})
 				sess := fakeSessionCache{}
 
-				executor := newExecutor(im, newTestConfig(), &sess, featuremgmt.WithFeatures())
+				executor := newExecutor(im, &sess, log.NewNullLogger())
 				_, err := executor.QueryData(context.Background(), &backend.QueryDataRequest{
 					Headers:       tc.headers,
 					PluginContext: backend.PluginContext{DataSourceInstanceSettings: &backend.DataSourceInstanceSettings{}},
@@ -152,6 +150,42 @@ func Test_executeSyncLogQuery(t *testing.T) {
 
 		executeSyncLogQuery = origExecuteSyncLogQuery
 	})
+
+	t.Run("when query mode is 'Logs' and does not include type or subtype", func(t *testing.T) {
+		origExecuteSyncLogQuery := executeSyncLogQuery
+		syncCalled := false
+		executeSyncLogQuery = func(ctx context.Context, e *cloudWatchExecutor, req *backend.QueryDataRequest) (*backend.QueryDataResponse, error) {
+			syncCalled = true
+			return nil, nil
+		}
+		t.Cleanup(func() {
+			executeSyncLogQuery = origExecuteSyncLogQuery
+		})
+
+		cli = fakeCWLogsClient{queryResults: cloudwatchlogs.GetQueryResultsOutput{Status: aws.String("Complete")}}
+		im := datasource.NewInstanceManager(func(ctx context.Context, s backend.DataSourceInstanceSettings) (instancemgmt.Instance, error) {
+			return DataSource{Settings: models.CloudWatchSettings{AWSDatasourceSettings: awsds.AWSDatasourceSettings{Region: "instance manager's region"}}}, nil
+		})
+		sess := fakeSessionCache{}
+
+		executor := newExecutor(im, &sess, log.NewNullLogger())
+		_, err := executor.QueryData(context.Background(), &backend.QueryDataRequest{
+			PluginContext: backend.PluginContext{DataSourceInstanceSettings: &backend.DataSourceInstanceSettings{}},
+			Queries: []backend.DataQuery{
+				{
+					TimeRange: backend.TimeRange{From: time.Unix(0, 0), To: time.Unix(1, 0)},
+					JSON: json.RawMessage(`{
+								"queryMode":    "Logs",
+								"region":      "default",
+								"queryString": "fields @message"
+							}`),
+				},
+			},
+		})
+
+		assert.NoError(t, err)
+		assert.Equal(t, true, syncCalled)
+	})
 }
 func Test_executeSyncLogQuery_handles_RefId_from_input_queries(t *testing.T) {
 	origNewCWClient := NewCWClient
@@ -173,10 +207,10 @@ func Test_executeSyncLogQuery_handles_RefId_from_input_queries(t *testing.T) {
 		im := datasource.NewInstanceManager(func(ctx context.Context, s backend.DataSourceInstanceSettings) (instancemgmt.Instance, error) {
 			return DataSource{Settings: models.CloudWatchSettings{}}, nil
 		})
-		executor := newExecutor(im, newTestConfig(), &fakeSessionCache{}, featuremgmt.WithFeatures())
+		executor := newExecutor(im, &fakeSessionCache{}, log.NewNullLogger())
 
 		res, err := executor.QueryData(context.Background(), &backend.QueryDataRequest{
-			Headers:       map[string]string{ngalertmodels.FromAlertHeaderName: "some value"},
+			Headers:       map[string]string{headerFromAlert: "some value"},
 			PluginContext: backend.PluginContext{DataSourceInstanceSettings: &backend.DataSourceInstanceSettings{}},
 			Queries: []backend.DataQuery{
 				{
@@ -202,10 +236,10 @@ func Test_executeSyncLogQuery_handles_RefId_from_input_queries(t *testing.T) {
 		im := datasource.NewInstanceManager(func(ctx context.Context, s backend.DataSourceInstanceSettings) (instancemgmt.Instance, error) {
 			return DataSource{Settings: models.CloudWatchSettings{}}, nil
 		})
-		executor := newExecutor(im, newTestConfig(), &fakeSessionCache{}, featuremgmt.WithFeatures())
+		executor := newExecutor(im, &fakeSessionCache{}, log.NewNullLogger())
 
 		res, err := executor.QueryData(context.Background(), &backend.QueryDataRequest{
-			Headers:       map[string]string{ngalertmodels.FromAlertHeaderName: "some value"},
+			Headers:       map[string]string{headerFromAlert: "some value"},
 			PluginContext: backend.PluginContext{DataSourceInstanceSettings: &backend.DataSourceInstanceSettings{}},
 			Queries: []backend.DataQuery{
 				{
@@ -271,10 +305,10 @@ func Test_executeSyncLogQuery_handles_RefId_from_input_queries(t *testing.T) {
 		im := datasource.NewInstanceManager(func(ctx context.Context, s backend.DataSourceInstanceSettings) (instancemgmt.Instance, error) {
 			return DataSource{Settings: models.CloudWatchSettings{}}, nil
 		})
-		executor := newExecutor(im, newTestConfig(), &fakeSessionCache{}, featuremgmt.WithFeatures())
+		executor := newExecutor(im, &fakeSessionCache{}, log.NewNullLogger())
 
 		res, err := executor.QueryData(context.Background(), &backend.QueryDataRequest{
-			Headers:       map[string]string{ngalertmodels.FromAlertHeaderName: "some value"},
+			Headers:       map[string]string{headerFromAlert: "some value"},
 			PluginContext: backend.PluginContext{DataSourceInstanceSettings: &backend.DataSourceInstanceSettings{}},
 			Queries: []backend.DataQuery{
 				{
@@ -317,10 +351,10 @@ func Test_executeSyncLogQuery_handles_RefId_from_input_queries(t *testing.T) {
 			return DataSource{Settings: models.CloudWatchSettings{LogsTimeout: models.Duration{Duration: time.Millisecond}}}, nil
 		})
 
-		executor := newExecutor(im, newTestConfig(), &fakeSessionCache{}, featuremgmt.WithFeatures())
+		executor := newExecutor(im, &fakeSessionCache{}, log.NewNullLogger())
 
 		_, err := executor.QueryData(context.Background(), &backend.QueryDataRequest{
-			Headers:       map[string]string{ngalertmodels.FromAlertHeaderName: "some value"},
+			Headers:       map[string]string{headerFromAlert: "some value"},
 			PluginContext: backend.PluginContext{DataSourceInstanceSettings: &backend.DataSourceInstanceSettings{}},
 			Queries: []backend.DataQuery{
 				{
@@ -349,10 +383,10 @@ func Test_executeSyncLogQuery_handles_RefId_from_input_queries(t *testing.T) {
 		im := datasource.NewInstanceManager(func(ctx context.Context, s backend.DataSourceInstanceSettings) (instancemgmt.Instance, error) {
 			return DataSource{Settings: models.CloudWatchSettings{}}, nil
 		})
-		executor := newExecutor(im, newTestConfig(), &fakeSessionCache{}, featuremgmt.WithFeatures())
+		executor := newExecutor(im, &fakeSessionCache{}, log.NewNullLogger())
 
 		res, err := executor.QueryData(context.Background(), &backend.QueryDataRequest{
-			Headers:       map[string]string{ngalertmodels.FromAlertHeaderName: "some value"},
+			Headers:       map[string]string{headerFromAlert: "some value"},
 			PluginContext: backend.PluginContext{DataSourceInstanceSettings: &backend.DataSourceInstanceSettings{}},
 			Queries: []backend.DataQuery{
 				{

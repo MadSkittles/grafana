@@ -11,7 +11,7 @@
 
 import * as common from '@grafana/schema';
 
-export const pluginVersion = "1.0.0";
+export const pluginVersion = "%VERSION%";
 
 export interface AzureMonitorQuery extends common.DataQuery {
   /**
@@ -258,6 +258,7 @@ export const defaultAzureTracesFilter: Partial<AzureTracesFilter> = {
 };
 
 export enum ResultFormat {
+  Logs = 'logs',
   Table = 'table',
   TimeSeries = 'time_series',
   Trace = 'trace',

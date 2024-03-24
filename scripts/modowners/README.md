@@ -35,7 +35,7 @@ Example CLI command to get a list of all owners with a count of the number of de
 Example output:
 
 ```
-@grafana/grafana-delivery 5
+@grafana/grafana-release-guild 5
 @grafana/grafana-bi-squad 2
 @grafana/grafana-app-platform-squad 13
 @grafana/observability-metrics 4
@@ -47,7 +47,7 @@ Example output:
 @grafana/dataviz-squad 1
 @grafana/backend-platform 75
 @grafana/grafana-as-code 11
-@grafana/grafana-authnz-team 6
+@grafana/identity-access-team 6
 @grafana/partner-datasources 4
 ```
 
@@ -67,7 +67,7 @@ List all dependencies of given owner(s).
 
 Example CLI command to list all direct dependencies owned by Delivery and Authnz:
 
-`go run scripts/modowners/modowners.go modules -o @grafana/grafana-delivery,@grafana/grafana-authnz-team go.mod`
+`go run scripts/modowners/modowners.go modules -o @grafana/grafana-release-guild,@grafana/identity-access-team go.mod`
 
 Example output:
 

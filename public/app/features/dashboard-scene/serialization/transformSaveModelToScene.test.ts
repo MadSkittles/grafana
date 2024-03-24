@@ -1,11 +1,23 @@
-import { LoadingState } from '@grafana/data';
+import {
+  LoadingState,
+  ConstantVariableModel,
+  CustomVariableModel,
+  DataSourceVariableModel,
+  QueryVariableModel,
+  IntervalVariableModel,
+  TypedVariableModel,
+  TextBoxVariableModel,
+  GroupByVariableModel,
+} from '@grafana/data';
 import { getPanelPlugin } from '@grafana/data/test/__mocks__/pluginMocks';
 import { config } from '@grafana/runtime';
 import {
-  AdHocFilterSet,
+  AdHocFiltersVariable,
   behaviors,
+  ConstantVariable,
   CustomVariable,
   DataSourceVariable,
+  GroupByVariable,
   QueryVariable,
   SceneDataLayerControls,
   SceneDataLayers,
@@ -13,20 +25,33 @@ import {
   SceneGridItem,
   SceneGridLayout,
   SceneGridRow,
+  SceneQueryRunner,
+  SceneRefreshPicker,
+  SceneTimePicker,
   VizPanel,
 } from '@grafana/scenes';
-import { DashboardCursorSync, defaultDashboard, Panel, RowPanel, VariableType } from '@grafana/schema';
+import {
+  DashboardCursorSync,
+  defaultDashboard,
+  defaultTimePickerConfig,
+  Panel,
+  RowPanel,
+  VariableType,
+} from '@grafana/schema';
 import { DashboardModel, PanelModel } from 'app/features/dashboard/state';
 import { createPanelSaveModel } from 'app/features/dashboard/state/__fixtures__/dashboardFixtures';
 import { SHARED_DASHBOARD_QUERY } from 'app/plugins/datasource/dashboard';
 import { DASHBOARD_DATASOURCE_PLUGIN_ID } from 'app/plugins/datasource/dashboard/types';
+import { DashboardDataDTO } from 'app/types';
 
+import { DashboardControls } from '../scene/DashboardControls';
 import { PanelRepeaterGridItem } from '../scene/PanelRepeaterGridItem';
 import { PanelTimeRange } from '../scene/PanelTimeRange';
 import { RowRepeaterBehavior } from '../scene/RowRepeaterBehavior';
-import { ShareQueryDataProvider } from '../scene/ShareQueryDataProvider';
+import { NEW_LINK } from '../settings/links/utils';
 import { getQueryRunnerFor } from '../utils/utils';
 
+import { buildNewDashboardSaveModel } from './buildNewDashboardSaveModel';
 import dashboard_to_load1 from './testfiles/dashboard_to_load1.json';
 import repeatingRowsAndPanelsDashboardJson from './testfiles/repeating_rows_and_panels.json';
 import {
@@ -47,6 +72,11 @@ describe('transformSaveModelToScene', () => {
         weekStart: 'saturday',
         fiscalYearStartMonth: 2,
         timezone: 'America/New_York',
+        timepicker: {
+          ...defaultTimePickerConfig,
+          hidden: true,
+        },
+        links: [{ ...NEW_LINK, title: 'Link 1' }],
         templating: {
           list: [
             {
@@ -82,17 +112,29 @@ describe('transformSaveModelToScene', () => {
       const oldModel = new DashboardModel(dash);
 
       const scene = createDashboardSceneFromDashboardModel(oldModel);
+      const dashboardControls = scene.state.controls![0] as DashboardControls;
 
       expect(scene.state.title).toBe('test');
       expect(scene.state.uid).toBe('test-uid');
+      expect(scene.state.links).toHaveLength(1);
+      expect(scene.state.links![0].title).toBe('Link 1');
       expect(scene.state?.$timeRange?.state.value.raw).toEqual(dash.time);
       expect(scene.state?.$timeRange?.state.fiscalYearStartMonth).toEqual(2);
       expect(scene.state?.$timeRange?.state.timeZone).toEqual('America/New_York');
       expect(scene.state?.$timeRange?.state.weekStart).toEqual('saturday');
-      expect(scene.state?.$variables?.state.variables).toHaveLength(1);
-      expect(scene.state.controls).toBeDefined();
-      expect(scene.state.controls![1]).toBeInstanceOf(AdHocFilterSet);
-      expect((scene.state.controls![1] as AdHocFilterSet).state.name).toBe('CoolFilters');
+
+      expect(scene.state?.$variables?.state.variables).toHaveLength(2);
+      expect(scene.state?.$variables?.getByName('constant')).toBeInstanceOf(ConstantVariable);
+      expect(scene.state?.$variables?.getByName('CoolFilters')).toBeInstanceOf(AdHocFiltersVariable);
+      expect(dashboardControls).toBeDefined();
+      expect(dashboardControls).toBeInstanceOf(DashboardControls);
+      expect(dashboardControls.state.timeControls).toHaveLength(2);
+      expect(dashboardControls.state.timeControls[0]).toBeInstanceOf(SceneTimePicker);
+      expect(dashboardControls.state.timeControls[1]).toBeInstanceOf(SceneRefreshPicker);
+      expect((dashboardControls.state.timeControls[1] as SceneRefreshPicker).state.intervals).toEqual(
+        defaultTimePickerConfig.refresh_intervals
+      );
+      expect(dashboardControls.state.hideTimeControls).toBe(true);
     });
 
     it('should apply cursor sync behavior', () => {
@@ -104,9 +146,38 @@ describe('transformSaveModelToScene', () => {
 
       const scene = createDashboardSceneFromDashboardModel(oldModel);
 
-      expect(scene.state.$behaviors).toHaveLength(1);
+      expect(scene.state.$behaviors).toHaveLength(5);
       expect(scene.state.$behaviors![0]).toBeInstanceOf(behaviors.CursorSync);
       expect((scene.state.$behaviors![0] as behaviors.CursorSync).state.sync).toEqual(DashboardCursorSync.Crosshair);
+    });
+
+    it('should initialize the Dashboard Scene with empty template variables', () => {
+      const dash = {
+        ...defaultDashboard,
+        title: 'test empty dashboard with no variables',
+        uid: 'test-uid',
+        time: { from: 'now-10h', to: 'now' },
+        weekStart: 'saturday',
+        fiscalYearStartMonth: 2,
+        timezone: 'America/New_York',
+        templating: {
+          list: [],
+        },
+      };
+      const oldModel = new DashboardModel(dash);
+
+      const scene = createDashboardSceneFromDashboardModel(oldModel);
+      expect(scene.state.$variables?.state.variables).toBeDefined();
+    });
+  });
+
+  describe('When creating a new dashboard', () => {
+    it('should initialize the DashboardScene in edit mode and dirty', () => {
+      const rsp = buildNewDashboardSaveModel();
+      const scene = transformSaveModelToScene(rsp);
+
+      expect(scene.state.isEditing).toBe(true);
+      expect(scene.state.isDirty).toBe(true);
     });
   });
 
@@ -329,7 +400,9 @@ describe('transformSaveModelToScene', () => {
       };
 
       const { vizPanel } = buildGridItemForTest(panel);
-      expect(vizPanel.state.$data).toBeInstanceOf(ShareQueryDataProvider);
+      expect(vizPanel.state.$data).toBeInstanceOf(SceneDataTransformer);
+      expect(vizPanel.state.$data?.state.$data).toBeInstanceOf(SceneQueryRunner);
+      expect((vizPanel.state.$data?.state.$data as SceneQueryRunner).state.queries).toEqual(panel.targets);
     });
 
     it('should not set SceneQueryRunner for plugins with skipDataQuery', () => {
@@ -370,11 +443,27 @@ describe('transformSaveModelToScene', () => {
       expect(repeater.state.repeatDirection).toBe('v');
       expect(repeater.state.maxPerRow).toBe(8);
     });
+
+    it('should apply query caching options to SceneQueryRunner', () => {
+      const panel = {
+        title: '',
+        type: 'test-plugin',
+        gridPos: { x: 0, y: 0, w: 12, h: 8 },
+        transparent: true,
+        cacheTimeout: '10',
+        queryCachingTTL: 200000,
+      };
+
+      const { vizPanel } = buildGridItemForTest(panel);
+      const runner = getQueryRunnerFor(vizPanel)!;
+      expect(runner.state.cacheTimeout).toBe('10');
+      expect(runner.state.queryCachingTTL).toBe(200000);
+    });
   });
 
   describe('when creating variables objects', () => {
     it('should migrate custom variable', () => {
-      const variable = {
+      const variable: CustomVariableModel = {
         current: {
           selected: false,
           text: 'a',
@@ -408,12 +497,12 @@ describe('transformSaveModelToScene', () => {
         ],
         query: 'a,b,c,d',
         skipUrlSync: false,
-        type: 'custom' as VariableType,
+        type: 'custom',
         rootStateKey: 'N4XLmH5Vz',
         id: 'query0',
         global: false,
         index: 0,
-        state: 'Done',
+        state: LoadingState.Done,
         error: null,
         description: null,
         allValue: null,
@@ -441,8 +530,8 @@ describe('transformSaveModelToScene', () => {
       });
     });
 
-    it('should migrate query variable', () => {
-      const variable = {
+    it('should migrate query variable with definition', () => {
+      const variable: QueryVariableModel = {
         allValue: null,
         current: {
           text: 'America',
@@ -453,7 +542,7 @@ describe('transformSaveModelToScene', () => {
           uid: 'P15396BDD62B2BE29',
           type: 'influxdb',
         },
-        definition: '',
+        definition: 'SHOW TAG VALUES  WITH KEY = "datacenter"',
         hide: 0,
         includeAll: false,
         label: 'Datacenter',
@@ -486,15 +575,12 @@ describe('transformSaveModelToScene', () => {
         regex: '',
         skipUrlSync: false,
         sort: 0,
-        tagValuesQuery: null,
-        tagsQuery: null,
-        type: 'query' as VariableType,
-        useTags: false,
+        type: 'query',
         rootStateKey: '000000002',
         id: 'datacenter',
         global: false,
         index: 0,
-        state: 'Done',
+        state: LoadingState.Done,
         error: null,
         description: null,
       };
@@ -525,20 +611,21 @@ describe('transformSaveModelToScene', () => {
         type: 'query',
         value: 'America',
         hide: 0,
+        definition: 'SHOW TAG VALUES  WITH KEY = "datacenter"',
       });
     });
 
     it('should migrate datasource variable', () => {
-      const variable = {
+      const variable: DataSourceVariableModel = {
         id: 'query1',
         rootStateKey: 'N4XLmH5Vz',
         name: 'query1',
-        type: 'datasource' as VariableType,
+        type: 'datasource',
         global: false,
         index: 1,
         hide: 0,
         skipUrlSync: false,
-        state: 'Done',
+        state: LoadingState.Done,
         error: null,
         description: null,
         current: {
@@ -595,12 +682,12 @@ describe('transformSaveModelToScene', () => {
     });
 
     it('should migrate constant variable', () => {
-      const variable = {
+      const variable: ConstantVariableModel = {
         hide: 2,
         label: 'constant',
         name: 'constant',
         skipUrlSync: false,
-        type: 'constant' as VariableType,
+        type: 'constant',
         rootStateKey: 'N4XLmH5Vz',
         current: {
           selected: true,
@@ -618,7 +705,7 @@ describe('transformSaveModelToScene', () => {
         id: 'constant',
         global: false,
         index: 3,
-        state: 'Done',
+        state: LoadingState.Done,
         error: null,
         description: null,
       };
@@ -638,10 +725,10 @@ describe('transformSaveModelToScene', () => {
     });
 
     it('should migrate interval variable', () => {
-      const variable = {
+      const variable: IntervalVariableModel = {
         name: 'intervalVar',
         label: 'Interval Label',
-        type: 'interval' as VariableType,
+        type: 'interval',
         rootStateKey: 'N4XLmH5Vz',
         auto: false,
         refresh: 2,
@@ -665,10 +752,11 @@ describe('transformSaveModelToScene', () => {
         index: 4,
         hide: 0,
         skipUrlSync: false,
-        state: 'Done',
+        state: LoadingState.Done,
         error: null,
         description: null,
       };
+
       const migrated = createSceneVariableFromVariableModel(variable);
       const { key, ...rest } = migrated.state;
       expect(rest).toEqual({
@@ -686,13 +774,247 @@ describe('transformSaveModelToScene', () => {
         value: '1m',
       });
     });
-    it.each(['textbox', 'system'])('should throw for unsupported (yet) variables', (type) => {
+
+    it('should migrate textbox variable', () => {
+      const variable: TextBoxVariableModel = {
+        id: 'query0',
+        global: false,
+        index: 0,
+        state: LoadingState.Done,
+        error: null,
+        name: 'textboxVar',
+        label: 'Textbox Label',
+        description: 'Textbox Description',
+        type: 'textbox',
+        rootStateKey: 'N4XLmH5Vz',
+        current: {},
+        hide: 0,
+        options: [],
+        query: 'defaultValue',
+        originalQuery: 'defaultValue',
+        skipUrlSync: false,
+      };
+
+      const migrated = createSceneVariableFromVariableModel(variable);
+      const { key, ...rest } = migrated.state;
+      expect(rest).toEqual({
+        description: 'Textbox Description',
+        hide: 0,
+        label: 'Textbox Label',
+        name: 'textboxVar',
+        skipUrlSync: false,
+        type: 'textbox',
+        value: 'defaultValue',
+      });
+    });
+
+    it('should migrate adhoc variable', () => {
+      const variable: TypedVariableModel = {
+        id: 'adhoc',
+        global: false,
+        index: 0,
+        state: LoadingState.Done,
+        error: null,
+        name: 'adhoc',
+        label: 'Adhoc Label',
+        description: 'Adhoc Description',
+        type: 'adhoc',
+        rootStateKey: 'N4XLmH5Vz',
+        datasource: {
+          uid: 'gdev-prometheus',
+          type: 'prometheus',
+        },
+        filters: [
+          {
+            key: 'filterTest',
+            operator: '=',
+            value: 'test',
+          },
+        ],
+        baseFilters: [
+          {
+            key: 'baseFilterTest',
+            operator: '=',
+            value: 'test',
+          },
+        ],
+        hide: 0,
+        skipUrlSync: false,
+      };
+
+      const migrated = createSceneVariableFromVariableModel(variable) as AdHocFiltersVariable;
+      const filterVarState = migrated.state;
+
+      expect(migrated).toBeInstanceOf(AdHocFiltersVariable);
+      expect(filterVarState).toEqual({
+        key: expect.any(String),
+        description: 'Adhoc Description',
+        hide: 0,
+        label: 'Adhoc Label',
+        name: 'adhoc',
+        skipUrlSync: false,
+        type: 'adhoc',
+        filterExpression: 'filterTest="test"',
+        filters: [{ key: 'filterTest', operator: '=', value: 'test' }],
+        baseFilters: [{ key: 'baseFilterTest', operator: '=', value: 'test' }],
+        datasource: { uid: 'gdev-prometheus', type: 'prometheus' },
+        applyMode: 'auto',
+      });
+    });
+
+    describe('when groupByVariable feature toggle is enabled', () => {
+      beforeAll(() => {
+        config.featureToggles.groupByVariable = true;
+      });
+
+      afterAll(() => {
+        config.featureToggles.groupByVariable = false;
+      });
+
+      it('should migrate groupby variable', () => {
+        const variable: GroupByVariableModel = {
+          id: 'groupby',
+          global: false,
+          index: 0,
+          state: LoadingState.Done,
+          error: null,
+          name: 'groupby',
+          label: 'GroupBy Label',
+          description: 'GroupBy Description',
+          type: 'groupby',
+          rootStateKey: 'N4XLmH5Vz',
+          datasource: {
+            uid: 'gdev-prometheus',
+            type: 'prometheus',
+          },
+          multi: true,
+          options: [
+            {
+              selected: false,
+              text: 'Foo',
+              value: 'foo',
+            },
+            {
+              selected: false,
+              text: 'Bar',
+              value: 'bar',
+            },
+          ],
+          current: {},
+          query: '',
+          hide: 0,
+          skipUrlSync: false,
+        };
+
+        const migrated = createSceneVariableFromVariableModel(variable) as GroupByVariable;
+        const groupbyVarState = migrated.state;
+
+        expect(migrated).toBeInstanceOf(GroupByVariable);
+        expect(groupbyVarState).toEqual({
+          key: expect.any(String),
+          description: 'GroupBy Description',
+          hide: 0,
+          defaultOptions: [
+            {
+              selected: false,
+              text: 'Foo',
+              value: 'foo',
+            },
+            {
+              selected: false,
+              text: 'Bar',
+              value: 'bar',
+            },
+          ],
+          isMulti: true,
+          layout: 'horizontal',
+          noValueOnClear: true,
+          label: 'GroupBy Label',
+          name: 'groupby',
+          skipUrlSync: false,
+          type: 'groupby',
+          baseFilters: [],
+          options: [],
+          text: [],
+          value: [],
+          datasource: { uid: 'gdev-prometheus', type: 'prometheus' },
+          applyMode: 'auto',
+        });
+      });
+    });
+
+    describe('when groupByVariable feature toggle is disabled', () => {
+      it('should not migrate groupby variable and throw an error instead', () => {
+        const variable: GroupByVariableModel = {
+          id: 'groupby',
+          global: false,
+          index: 0,
+          state: LoadingState.Done,
+          error: null,
+          name: 'groupby',
+          label: 'GroupBy Label',
+          description: 'GroupBy Description',
+          type: 'groupby',
+          rootStateKey: 'N4XLmH5Vz',
+          datasource: {
+            uid: 'gdev-prometheus',
+            type: 'prometheus',
+          },
+          multi: true,
+          options: [],
+          current: {},
+          query: '',
+          hide: 0,
+          skipUrlSync: false,
+        };
+
+        expect(() => createSceneVariableFromVariableModel(variable)).toThrow('Scenes: Unsupported variable type');
+      });
+    });
+
+    it.each(['system'])('should throw for unsupported (yet) variables', (type) => {
       const variable = {
         name: 'query0',
         type: type as VariableType,
       };
 
-      expect(() => createSceneVariableFromVariableModel(variable)).toThrow();
+      expect(() => createSceneVariableFromVariableModel(variable as TypedVariableModel)).toThrow();
+    });
+
+    it('should handle variable without current', () => {
+      // @ts-expect-error
+      const variable: TypedVariableModel = {
+        id: 'query1',
+        name: 'query1',
+        type: 'datasource',
+        global: false,
+        regex: '/^gdev/',
+        options: [],
+        query: 'prometheus',
+        multi: true,
+        includeAll: true,
+        refresh: 1,
+        allValue: 'Custom all',
+      };
+
+      const migrated = createSceneVariableFromVariableModel(variable);
+      const { key, ...rest } = migrated.state;
+
+      expect(migrated).toBeInstanceOf(DataSourceVariable);
+      expect(rest).toEqual({
+        allValue: 'Custom all',
+        defaultToAll: true,
+        includeAll: true,
+        label: undefined,
+        name: 'query1',
+        options: [],
+        pluginId: 'prometheus',
+        regex: '/^gdev/',
+        text: '',
+        type: 'datasource',
+        value: '',
+        isMulti: true,
+      });
     });
   });
 
@@ -717,7 +1039,9 @@ describe('transformSaveModelToScene', () => {
       const scene = transformSaveModelToScene({ dashboard: dashboard_to_load1 as any, meta: {} });
 
       expect(scene.state.$data).toBeInstanceOf(SceneDataLayers);
-      expect(scene.state.controls![2]).toBeInstanceOf(SceneDataLayerControls);
+      expect((scene.state.controls![0] as DashboardControls)!.state.variableControls[1]).toBeInstanceOf(
+        SceneDataLayerControls
+      );
 
       const dataLayers = scene.state.$data as SceneDataLayers;
       expect(dataLayers.state.layers).toHaveLength(4);
@@ -736,6 +1060,38 @@ describe('transformSaveModelToScene', () => {
       expect(dataLayers.state.layers[3].state.name).toBe('Hidden');
       expect(dataLayers.state.layers[3].state.isEnabled).toBe(true);
       expect(dataLayers.state.layers[3].state.isHidden).toBe(true);
+    });
+  });
+
+  describe('Alerting data layer', () => {
+    it('Should add alert states data layer if unified alerting enabled', () => {
+      config.unifiedAlertingEnabled = true;
+      const scene = transformSaveModelToScene({ dashboard: dashboard_to_load1 as any, meta: {} });
+
+      expect(scene.state.$data).toBeInstanceOf(SceneDataLayers);
+      expect((scene.state.controls![0] as DashboardControls)!.state.variableControls[1]).toBeInstanceOf(
+        SceneDataLayerControls
+      );
+
+      const dataLayers = scene.state.$data as SceneDataLayers;
+      expect(dataLayers.state.layers).toHaveLength(5);
+      expect(dataLayers.state.layers[4].state.name).toBe('Alert States');
+    });
+
+    it('Should add alert states data layer if any panel has a legacy alert defined', () => {
+      config.unifiedAlertingEnabled = false;
+      const dashboard = { ...dashboard_to_load1 } as unknown as DashboardDataDTO;
+      dashboard.panels![0].alert = {};
+      const scene = transformSaveModelToScene({ dashboard: dashboard_to_load1 as any, meta: {} });
+
+      expect(scene.state.$data).toBeInstanceOf(SceneDataLayers);
+      expect((scene.state.controls![0] as DashboardControls)!.state.variableControls[1]).toBeInstanceOf(
+        SceneDataLayerControls
+      );
+
+      const dataLayers = scene.state.$data as SceneDataLayers;
+      expect(dataLayers.state.layers).toHaveLength(5);
+      expect(dataLayers.state.layers[4].state.name).toBe('Alert States');
     });
   });
 });
