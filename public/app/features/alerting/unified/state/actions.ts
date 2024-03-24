@@ -33,7 +33,13 @@ import {
 } from 'app/types/unified-alerting-dto';
 
 import { backendSrv } from '../../../../core/services/backend_srv';
-import { logInfo, LogMessages, withPerformanceLogging } from '../Analytics';
+import {
+  logInfo,
+  LogMessages,
+  withPerformanceLogging,
+  withPromRulesMetadataLogging,
+  withRulerRulesMetadataLogging,
+} from '../Analytics';
 import {
   addAlertManagers,
   createOrUpdateSilence,
@@ -59,6 +65,7 @@ import {
   FetchRulerRulesFilter,
   setRulerRuleGroup,
 } from '../api/ruler';
+import { encodeGrafanaNamespace } from '../components/expressions/util';
 import { RuleFormType, RuleFormValues } from '../types/rule-form';
 import { addDefaultsToAlertmanagerConfig, removeMuteTimingFromRoute } from '../utils/alertmanager';
 import {
@@ -115,10 +122,11 @@ export const fetchPromRulesAction = createAsyncThunk(
   ): Promise<RuleNamespace[]> => {
     await thunkAPI.dispatch(fetchRulesSourceBuildInfoAction({ rulesSourceName }));
 
-    const fetchRulesWithLogging = withPerformanceLogging(fetchRules, `[${rulesSourceName}] Prometheus rules loaded`, {
-      dataSourceName: rulesSourceName,
-      thunk: 'unifiedalerting/fetchPromRules',
-    });
+    const fetchRulesWithLogging = withPromRulesMetadataLogging(
+      fetchRules,
+      `[${rulesSourceName}] Prometheus rules loaded`,
+      { dataSourceName: rulesSourceName, thunk: 'unifiedalerting/fetchPromRules' }
+    );
 
     return await withSerializedError(
       fetchRulesWithLogging(rulesSourceName, filter, limitAlerts, matcher, state, identifier)
@@ -155,7 +163,7 @@ export const fetchRulerRulesAction = createAsyncThunk(
     await dispatch(fetchRulesSourceBuildInfoAction({ rulesSourceName }));
     const rulerConfig = getDataSourceRulerConfig(getState, rulesSourceName);
 
-    const fetchRulerRulesWithLogging = withPerformanceLogging(
+    const fetchRulerRulesWithLogging = withRulerRulesMetadataLogging(
       fetchRulerRules,
       `[${rulesSourceName}] Ruler rules loaded`,
       {
@@ -182,7 +190,7 @@ export function fetchPromAndRulerRulesAction({
   limitAlerts?: number;
   matcher?: Matcher[];
   state?: string[];
-}): ThunkResult<void> {
+}): ThunkResult<Promise<void>> {
   return async (dispatch, getState) => {
     await dispatch(fetchRulesSourceBuildInfoAction({ rulesSourceName }));
     const dsConfig = getDataSourceConfig(getState, rulesSourceName);
@@ -382,6 +390,8 @@ export function deleteRuleAction(
    * reload ruler rules
    */
   return async (dispatch, getState) => {
+    await dispatch(fetchRulesSourceBuildInfoAction({ rulesSourceName: ruleIdentifier.ruleSourceName }));
+
     withAppEvents(
       (async () => {
         const rulerConfig = getDataSourceRulerConfig(getState, ruleIdentifier.ruleSourceName);
@@ -566,7 +576,7 @@ export const createOrUpdateSilenceAction = createAsyncThunk<void, UpdateSilenceA
         (async () => {
           await createOrUpdateSilence(alertManagerSourceName, payload);
           if (exitOnSave) {
-            locationService.push('/alerting/silences');
+            locationService.push(makeAMLink('/alerting/silences', alertManagerSourceName));
           }
         })()
       ),
@@ -736,6 +746,7 @@ interface UpdateNamespaceAndGroupOptions {
   newNamespaceName: string;
   newGroupName: string;
   groupInterval?: string;
+  folderUid?: string;
 }
 
 export const rulesInSameGroupHaveInvalidFor = (rules: RulerRuleDTO[], everyDuration: string) => {
@@ -759,13 +770,22 @@ export const updateLotexNamespaceAndGroupAction: AsyncThunk<
     return withAppEvents(
       withSerializedError(
         (async () => {
-          const { rulesSourceName, namespaceName, groupName, newNamespaceName, newGroupName, groupInterval } = options;
+          const {
+            rulesSourceName,
+            namespaceName,
+            groupName,
+            newNamespaceName,
+            newGroupName,
+            groupInterval,
+            folderUid,
+          } = options;
 
           const rulerConfig = getDataSourceRulerConfig(thunkAPI.getState, rulesSourceName);
           // fetch rules and perform sanity checks
           const rulesResult = await fetchRulerRules(rulerConfig);
 
           const existingNamespace = Boolean(rulesResult[namespaceName]);
+
           if (!existingNamespace) {
             throw new Error(`Namespace "${namespaceName}" not found.`);
           }
@@ -784,11 +804,14 @@ export const updateLotexNamespaceAndGroupAction: AsyncThunk<
           }
 
           const newNamespaceAlreadyExists = Boolean(rulesResult[newNamespaceName]);
-          if (newNamespaceName !== namespaceName && newNamespaceAlreadyExists) {
+          const isGrafanaManagedGroup = rulesSourceName === GRAFANA_RULES_SOURCE_NAME;
+          const originalNamespace = isGrafanaManagedGroup ? encodeGrafanaNamespace(namespaceName) : namespaceName;
+
+          if (newNamespaceName !== originalNamespace && newNamespaceAlreadyExists) {
             throw new Error(`Namespace "${newNamespaceName}" already exists.`);
           }
           if (
-            newNamespaceName === namespaceName &&
+            newNamespaceName === originalNamespace &&
             groupName === newGroupName &&
             groupInterval === existingGroup.interval
           ) {
@@ -810,8 +833,8 @@ export const updateLotexNamespaceAndGroupAction: AsyncThunk<
             }
           }
           // if renaming namespace - make new copies of all groups, then delete old namespace
-
-          if (newNamespaceName !== namespaceName) {
+          // this is only possible for cloud rules
+          if (newNamespaceName !== originalNamespace) {
             for (const group of rulesResult[namespaceName]) {
               await setRulerRuleGroup(
                 rulerConfig,
@@ -825,19 +848,19 @@ export const updateLotexNamespaceAndGroupAction: AsyncThunk<
                   : group
               );
             }
-            await deleteNamespace(rulerConfig, namespaceName);
+            await deleteNamespace(rulerConfig, folderUid || namespaceName);
 
             // if only modifying group...
           } else {
             // save updated group
-            await setRulerRuleGroup(rulerConfig, namespaceName, {
+            await setRulerRuleGroup(rulerConfig, folderUid || namespaceName, {
               ...existingGroup,
               name: newGroupName,
               interval: groupInterval,
             });
             // if group name was changed, delete old group
             if (newGroupName !== groupName) {
-              await deleteRulerRulesGroup(rulerConfig, namespaceName, groupName);
+              await deleteRulerRulesGroup(rulerConfig, folderUid || namespaceName, groupName);
             }
           }
 
@@ -858,6 +881,7 @@ interface UpdateRulesOrderOptions {
   namespaceName: string;
   groupName: string;
   newRules: RulerRuleDTO[];
+  folderUid: string;
 }
 
 export const updateRulesOrder = createAsyncThunk(
@@ -866,7 +890,7 @@ export const updateRulesOrder = createAsyncThunk(
     return withAppEvents(
       withSerializedError(
         (async () => {
-          const { rulesSourceName, namespaceName, groupName, newRules } = options;
+          const { rulesSourceName, namespaceName, groupName, newRules, folderUid } = options;
 
           const rulerConfig = getDataSourceRulerConfig(thunkAPI.getState, rulesSourceName);
           const rulesResult = await fetchRulerRules(rulerConfig);
@@ -882,7 +906,7 @@ export const updateRulesOrder = createAsyncThunk(
             rules: newRules,
           };
 
-          await setRulerRuleGroup(rulerConfig, namespaceName, payload);
+          await setRulerRuleGroup(rulerConfig, folderUid ?? namespaceName, payload);
 
           await thunkAPI.dispatch(fetchRulerRulesAction({ rulesSourceName }));
         })()

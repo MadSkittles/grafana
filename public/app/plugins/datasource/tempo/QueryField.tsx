@@ -15,12 +15,11 @@ import {
   withTheme2,
 } from '@grafana/ui';
 
-import { LokiQuery } from '../loki/types';
-
 import { LokiSearch } from './LokiSearch';
 import NativeSearch from './NativeSearch/NativeSearch';
 import TraceQLSearch from './SearchTraceQLEditor/TraceQLSearch';
 import { ServiceGraphSection } from './ServiceGraphSection';
+import { LokiQuery } from './_importedDependencies/datasources/loki/types';
 import { TempoQueryType } from './dataquery.gen';
 import { TempoDatasource } from './datasource';
 import { QueryEditor } from './traceql/QueryEditor';
@@ -31,7 +30,9 @@ interface State {
   uploadModalOpen: boolean;
 }
 
-const DEFAULT_QUERY_TYPE: TempoQueryType = 'traceqlSearch';
+// This needs to default to traceql for data sources like Splunk, where clicking on a
+// data link should open the traceql tab and run a search based on the configured query.
+const DEFAULT_QUERY_TYPE: TempoQueryType = 'traceql';
 
 class TempoQueryFieldComponent extends React.PureComponent<Props, State> {
   constructor(props: Props) {
@@ -122,6 +123,9 @@ class TempoQueryFieldComponent extends React.PureComponent<Props, State> {
             <FileDropzone
               options={{ multiple: false }}
               onLoad={(result) => {
+                if (typeof result !== 'string' && result !== null) {
+                  throw Error(`Unexpected result type: ${typeof result}`);
+                }
                 this.props.datasource.uploadedJson = result;
                 onChange({
                   ...query,
@@ -149,7 +153,6 @@ class TempoQueryFieldComponent extends React.PureComponent<Props, State> {
                   });
 
                   this.onClearResults();
-
                   onChange({
                     ...query,
                     queryType: v,
@@ -192,6 +195,8 @@ class TempoQueryFieldComponent extends React.PureComponent<Props, State> {
             query={query}
             onChange={onChange}
             onBlur={this.props.onBlur}
+            app={app}
+            onClearResults={this.onClearResults}
           />
         )}
         {query.queryType === 'serviceMap' && (
@@ -203,6 +208,8 @@ class TempoQueryFieldComponent extends React.PureComponent<Props, State> {
             query={query}
             onRunQuery={this.props.onRunQuery}
             onChange={onChange}
+            app={app}
+            onClearResults={this.onClearResults}
           />
         )}
       </>

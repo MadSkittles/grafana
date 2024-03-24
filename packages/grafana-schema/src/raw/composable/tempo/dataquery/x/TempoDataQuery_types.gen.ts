@@ -11,10 +11,14 @@
 
 import * as common from '@grafana/schema';
 
-export const pluginVersion = "10.1.2";
+export const pluginVersion = "%VERSION%";
 
 export interface TempoQuery extends common.DataQuery {
   filters: Array<TraceqlFilter>;
+  /**
+   * Filters that are used to query the metrics summary
+   */
+  groupBy?: Array<TraceqlFilter>;
   /**
    * Defines the maximum number of traces that are returned from Tempo
    */
@@ -30,7 +34,7 @@ export interface TempoQuery extends common.DataQuery {
   /**
    * TraceQL query or trace ID
    */
-  query: string;
+  query?: string;
   /**
    * @deprecated Logfmt query to filter traces by their tags. Example: http.status_code=200 error=true
    */
@@ -40,9 +44,9 @@ export interface TempoQuery extends common.DataQuery {
    */
   serviceMapIncludeNamespace?: boolean;
   /**
-   * Filters to be included in a PromQL query to select data for the service graph. Example: {client="app",service="app"}
+   * Filters to be included in a PromQL query to select data for the service graph. Example: {client="app",service="app"}. Providing multiple values will produce union of results for each filter, using PromQL OR operator internally.
    */
-  serviceMapQuery?: string;
+  serviceMapQuery?: (string | Array<string>);
   /**
    * @deprecated Query traces by service name
    */
@@ -51,10 +55,19 @@ export interface TempoQuery extends common.DataQuery {
    * @deprecated Query traces by span name
    */
   spanName?: string;
+  /**
+   * Defines the maximum number of spans per spanset that are returned from Tempo
+   */
+  spss?: number;
+  /**
+   * The type of the table that is used to display the search results
+   */
+  tableType?: SearchTableType;
 }
 
 export const defaultTempoQuery: Partial<TempoQuery> = {
   filters: [],
+  groupBy: [],
 };
 
 /**
@@ -73,9 +86,18 @@ export enum SearchStreamingState {
 }
 
 /**
+ * The type of the table that is used to display the search results
+ */
+export enum SearchTableType {
+  Spans = 'spans',
+  Traces = 'traces',
+}
+
+/**
  * static fields are pre-set in the UI, dynamic fields are added by the user
  */
 export enum TraceqlSearchScope {
+  Intrinsic = 'intrinsic',
   Resource = 'resource',
   Span = 'span',
   Unscoped = 'unscoped',

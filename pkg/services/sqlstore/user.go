@@ -88,11 +88,11 @@ func (ss *SQLStore) createUser(ctx context.Context, sess *DBSession, args user.C
 	usr.Rands = rands
 
 	if len(args.Password) > 0 {
-		encodedPassword, err := util.EncodePassword(args.Password, usr.Salt)
+		encodedPassword, err := util.EncodePassword(string(args.Password), usr.Salt)
 		if err != nil {
 			return usr, err
 		}
-		usr.Password = encodedPassword
+		usr.Password = user.Password(encodedPassword)
 	}
 
 	sess.UseBool("is_admin")
@@ -146,8 +146,6 @@ func verifyExistingOrg(sess *DBSession, orgId int64) error {
 
 func (ss *SQLStore) getOrCreateOrg(sess *DBSession, orgName string) (int64, error) {
 	var org org.Org
-	org.Created = time.Now()
-	org.Updated = org.Created
 
 	if ss.Cfg.AutoAssignOrg {
 		has, err := sess.Where("id=?", ss.Cfg.AutoAssignOrgId).Get(&org)
@@ -167,6 +165,8 @@ func (ss *SQLStore) getOrCreateOrg(sess *DBSession, orgName string) (int64, erro
 		}
 
 		org.Name = mainOrgName
+		org.Created = time.Now()
+		org.Updated = org.Created
 		org.ID = int64(ss.Cfg.AutoAssignOrgId)
 		if err := sess.InsertId(&org, ss.Dialect); err != nil {
 			ss.log.Error("failed to insert organization with provided id", "org_id", org.ID, "err", err)
@@ -178,6 +178,8 @@ func (ss *SQLStore) getOrCreateOrg(sess *DBSession, orgName string) (int64, erro
 		}
 	} else {
 		org.Name = orgName
+		org.Created = time.Now()
+		org.Updated = org.Created
 		if _, err := sess.InsertOne(&org); err != nil {
 			return 0, err
 		}

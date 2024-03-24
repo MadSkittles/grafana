@@ -2,6 +2,7 @@ package clientmiddleware
 
 import (
 	"context"
+	"strings"
 
 	"github.com/grafana/grafana-plugin-sdk-go/backend"
 
@@ -34,7 +35,7 @@ func (m *TracingHeaderMiddleware) applyHeaders(ctx context.Context, req backend.
 		return
 	}
 
-	var headersList = []string{query.HeaderQueryGroupID, query.HeaderPanelID, query.HeaderDashboardUID, query.HeaderDatasourceUID, query.HeaderFromExpression, `X-Grafana-Org-Id`}
+	var headersList = []string{query.HeaderQueryGroupID, query.HeaderPanelID, query.HeaderDashboardUID, query.HeaderDatasourceUID, query.HeaderFromExpression, `X-Grafana-Org-Id`, query.HeaderPanelPluginId}
 
 	for _, headerName := range headersList {
 		gotVal := reqCtx.Req.Header.Get(headerName)
@@ -42,6 +43,23 @@ func (m *TracingHeaderMiddleware) applyHeaders(ctx context.Context, req backend.
 			continue
 		}
 		req.SetHTTPHeader(headerName, gotVal)
+	}
+
+	for key, _ := range reqCtx.Req.Header {
+		if strings.HasPrefix(key, "X-Dashboard-Var") {
+			gotVal := reqCtx.Req.Header.Get(key)
+			if gotVal == "" {
+				continue
+			}
+			req.SetHTTPHeader(key, gotVal)
+		}
+		if key == "X-No-Panel-Cache" {
+			gotVal := reqCtx.Req.Header.Get(key)
+			if gotVal == "" {
+				continue
+			}
+			req.SetHTTPHeader(key, gotVal)
+		}
 	}
 }
 

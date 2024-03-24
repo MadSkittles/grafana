@@ -162,3 +162,6 @@ func (f *FakeOrgStore) RemoveOrgUser(ctx context.Context, cmd *org.RemoveOrgUser
 func (f *FakeOrgStore) Count(ctx context.Context, _ *quota.ScopeParameters) (*quota.Map, error) {
 	return nil, nil
 }
+
+func (f *FakeOrgStore) RegisterDelete(query string) {
+}

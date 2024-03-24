@@ -3,6 +3,7 @@ package remotecache
 import (
 	"context"
 	"crypto/tls"
+	"errors"
 	"fmt"
 	"strconv"
 	"strings"
@@ -93,7 +94,15 @@ func (s *redisStorage) Set(ctx context.Context, key string, data []byte, expires
 
 // GetByteArray returns the value as byte array
 func (s *redisStorage) Get(ctx context.Context, key string) ([]byte, error) {
-	return s.c.Get(ctx, key).Bytes()
+	item, err := s.c.Get(ctx, key).Bytes()
+	if err != nil {
+		if errors.Is(err, redis.Nil) {
+			return nil, ErrCacheItemNotFound
+		}
+		return nil, err
+	}
+
+	return item, nil
 }
 
 // Delete delete a key from session.
@@ -109,4 +118,15 @@ func (s *redisStorage) Count(ctx context.Context, prefix string) (int64, error) 
 	}
 
 	return int64(len(cmd.Val())), nil
+}
+
+func (s *redisStorage) DeleteWithPrefix(ctx context.Context, prefix string) error {
+	iter := s.c.Scan(ctx, 0, prefix+"*", 0).Iterator()
+	for iter.Next(ctx) {
+		err := s.c.Del(ctx, iter.Val()).Err()
+		if err != nil {
+			return err
+		}
+	}
+	return iter.Err()
 }
